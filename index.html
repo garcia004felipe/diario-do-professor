@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport"
+    content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0, viewport-fit=cover" />
+  <title>Diário do Professor</title>
+
+  <!-- PWA Meta Tags -->
+  <meta name="description" content="Sistema completo de gestão escolar para professores" />
+  <meta name="theme-color" content="#4F46E5" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Diário Prof" />
+  <link rel="manifest" href="/manifest.json" />
+  <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+  <link rel="apple-touch-icon" href="/icon.svg" />
+
+  <!-- Permite acesso a recursos externos no WebView -->
+  <meta http-equiv="Content-Security-Policy" content="default-src * 'unsafe-inline' 'unsafe-eval' data: blob:;">
+
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Babel Standalone -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <!-- HTML2PDF Bundle Global (Corrige erro de importação e crash) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"
+    integrity="sha512-GsLlZN/3F2ErC5ifS5QtgpiJtWd43JWSuIgh7mbzZ8zBps+dvLusV+eNQATqgA/HdeKFVgA5v3S/cIrLF7QnIg=="
+    crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+
+  <script>
+    // SHIM CRÍTICO: Garante process.env para evitar crash no Android WebView sem sobrescrever
+    window.process = window.process || { env: {} };
+    window.process.env = window.process.env || {};
+
+    // Configuração do Tailwind com nova Paleta INDIGO
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#eef2ff',
+              100: '#e0e7ff',
+              200: '#c7d2fe',
+              300: '#a5b4fc',
+              400: '#818cf8',
+              500: '#6366f1',
+              600: '#4f46e5', // Nova cor primária (Indigo)
+              700: '#4338ca',
+              800: '#3730a3',
+              900: '#312e81',
+              950: '#1e1b4b',
+            },
+            sidebar: {
+              bg: '#0f172a', // Slate 900
+              hover: '#1e293b', // Slate 800
+              active: '#4f46e5', // Brand 600
+              text: '#94a3b8', // Slate 400
+              textActive: '#ffffff'
+            }
+          },
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Adicionando Fonte Inter para visual mais moderno -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+  <script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@19.0.0",
+    "react-dom": "https://esm.sh/react-dom@19.0.0",
+    "react-dom/client": "https://esm.sh/react-dom@19.0.0/client",
+    "@google/genai": "https://esm.sh/@google/genai@1.40.0",
+    "lucide-react": "https://esm.sh/lucide-react@0.460.0?external=react",
+    "react-markdown": "https://esm.sh/react-markdown@9.0.0?external=react",
+    "recharts": "https://esm.sh/recharts@2.13.0?external=react",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
+    "react/": "https://esm.sh/react@^19.2.4/"
+  }
+}
+</script>
+
+  <style>
+    * {
+      -webkit-overflow-scrolling: touch;
+    }
+
+    body {
+      -webkit-tap-highlight-color: transparent;
+      overscroll-behavior-y: contain;
+      margin: 0;
+      padding: 0;
+      background-color: #f1f5f9;
+      transition: background-color 0.3s ease;
+    }
+
+    /* Dark Mode */
+    body.dark {
+      background-color: #0f172a;
+      color: #e2e8f0;
+    }
+
+    body.dark .bg-white {
+      background-color: #1e293b !important;
+    }
+
+    body.dark .bg-slate-100 {
+      background-color: #0f172a !important;
+    }
+
+    body.dark .bg-gray-50 {
+      background-color: #1e293b !important;
+    }
+
+    body.dark .text-gray-800,
+    body.dark .text-gray-900 {
+      color: #e2e8f0 !important;
+    }
+
+    body.dark .text-gray-600,
+    body.dark .text-gray-700 {
+      color: #cbd5e1 !important;
+    }
+
+    body.dark .text-gray-500 {
+      color: #94a3b8 !important;
+    }
+
+    body.dark .border-gray-100,
+    body.dark .border-gray-200 {
+      border-color: #334155 !important;
+    }
+
+    body.dark .shadow-sm,
+    body.dark .shadow-md,
+    body.dark .shadow-lg {
+      box-shadow: 0 0 15px rgba(0, 0, 0, 0.5) !important;
+    }
+
+    /* Slate 100 */
+    body {
+      font-family: 'Inter', sans-serif;
+      color: #1e293b;
+      padding-top: env(safe-area-inset-top);
+      padding-bottom: env(safe-area-inset-bottom);
+    }
+
+    /* Utility class for scroll locking */
+    body.scroll-locked {
+      overflow: hidden !important;
+    }
+
+    body.scroll-locked #main-content {
+      overflow: hidden !important;
+    }
+
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 3px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: #94a3b8;
+    }
+
+    #splash {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: #ffffff;
+      z-index: 9999;
+      transition: opacity 0.5s ease;
+    }
+
+    .spinner {
+      width: 40px;
+      height: 40px;
+      border: 4px solid #f3f3f3;
+      border-top: 4px solid #4f46e5;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+      0% {
+        transform: rotate(0deg);
+      }
+
+      100% {
+        transform: rotate(360deg);
+      }
+    }
+
+    @keyframes shimmer {
+      0% { background-position: 200% 0; }
+      100% { background-position: -200% 0; }
+    }
+
+    #error-log {
+      display: none;
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: #fee2e2;
+      color: #991b1b;
+      padding: 15px;
+      font-family: monospace;
+      font-size: 11px;
+      z-index: 10000;
+      max-height: 40vh;
+      overflow-y: auto;
+      border-top: 2px solid #f87171;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="splash">
+    <div class="spinner"></div>
+    <p style="margin-top: 16px; font-family: sans-serif; color: #64748b; font-size: 14px; font-weight: 500;">
+      Carregando...</p>
+  </div>
+
+  <div id="error-log"></div>
+  <div id="root"></div>
+
+  <script type="module" src="/index.tsx"></script>
+
+  <script>
+    window.onerror = function (msg, url, lineNo, columnNo, error) {
+      const log = document.getElementById('error-log');
+      const splash = document.getElementById('splash');
+      if (splash) splash.style.display = 'none';
+      log.style.display = 'block';
+
+      // Ignora erros irrelevantes do Babel Standalone ou React DevTools
+      if (msg.includes('Babel') || msg.includes('Extension')) return false;
+
+      log.innerHTML += '<div style="margin-bottom:5px"><strong>Erro:</strong> ' + msg + '<br/><span style="opacity:0.7">' + url + ':' + lineNo + '</span></div>';
+      return false;
+    };
+
+    window.addEventListener('load', () => {
+      setTimeout(() => {
+        const checkRoot = setInterval(() => {
+          const root = document.getElementById('root');
+          // Verifica se o React montou algo no root
+          if (root && root.childElementCount > 0) {
+            const splash = document.getElementById('splash');
+            if (splash) {
+              splash.style.opacity = '0';
+              setTimeout(() => splash.remove(), 500);
+            }
+            clearInterval(checkRoot);
+          }
+        }, 200);
+
+        // Timeout de segurança para remover splash se o React demorar muito
+        setTimeout(() => {
+          const splash = document.getElementById('splash');
+          if (splash) {
+            splash.style.opacity = '0';
+            setTimeout(() => splash.remove(), 500);
+          }
+        }, 5000);
+      }, 500);
+    });
+  </script>
+
+  <!-- Registrar Service Worker -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/service-worker.js')
+          .then((registration) => {
+            console.log('[SW] Service Worker registered:', registration);
+          })
+          .catch((error) => {
+            console.log('[SW] Service Worker registration failed:', error);
+          });
+      });
+    }
+  </script>
+</body>
+
+</html>

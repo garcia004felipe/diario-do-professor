@@ -1,0 +1,7 @@
+{
+  "name": "Diário do Professor",
+  "description": "Gestão escolar inteligente e simplificada para professores.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
