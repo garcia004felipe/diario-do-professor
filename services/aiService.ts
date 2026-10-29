@@ -27,7 +27,7 @@ export const generateStudentFeedbackPDF = async (student: Student): Promise<{ su
       Não use emojis e mantenha a formatação limpa (apenas texto simples).
     `;
 
-    const aiFeedback = await handleAiRequest(prompt, 'gemini-2.5-flash');
+    const aiFeedback = await handleAiRequest(prompt, 'gemini-2.0-flash');
 
     if (!aiFeedback || aiFeedback.startsWith('Erro na IA:')) {
       throw new Error(aiFeedback || 'Não foi possível gerar o parecer no momento.');

@@ -35,7 +35,7 @@ export default async (req: Request) => {
   }
 
   try {
-    const { prompt, model = "gemini-2.5-flash" } = await req.json();
+    const { prompt, model = "gemini-2.0-flash" } = await req.json();
 
     if (!prompt) {
       return new Response(JSON.stringify({ error: "Prompt é obrigatório." }), {

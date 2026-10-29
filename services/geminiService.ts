@@ -1,6 +1,6 @@
 import { GoogleGenAI } from "@google/genai";
 
-const MODEL_NAME = 'gemini-2.5-flash';
+const MODEL_NAME = 'gemini-2.0-flash';
 
 // A IA deve ser configurada apenas no servidor/deploy, nunca no navegador de cada usuário.
 export const getApiKey = (): string => {

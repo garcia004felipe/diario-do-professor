@@ -40,7 +40,7 @@ export default defineConfig(({ mode }) => {
 
             req.on('end', async () => {
               try {
-                const { prompt, model = 'gemini-2.5-flash' } = JSON.parse(body || '{}');
+                const { prompt, model = 'gemini-2.0-flash' } = JSON.parse(body || '{}');
                 const apiKey = env.GEMINI_API_KEY || process.env.GEMINI_API_KEY;
 
                 if (!apiKey) {

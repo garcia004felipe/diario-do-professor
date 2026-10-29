@@ -34,7 +34,7 @@ export default async function handler(req, res) {
 
     req.on('end', async () => {
       try {
-        const { prompt, model = 'gemini-2.5-flash' } = JSON.parse(body || '{}');
+        const { prompt, model = 'gemini-2.0-flash' } = JSON.parse(body || '{}');
 
         if (!prompt) {
           res.status(400).json({ error: 'Prompt é obrigatório.' });
