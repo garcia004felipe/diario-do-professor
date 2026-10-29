@@ -35,18 +35,20 @@ export default async (req: Request) => {
   }
 
   try {
-    const { prompt, model = "gemini-2.0-flash" } = await req.json();
+    const { prompt, model } = await req.json();
 
     if (!prompt) {
       return new Response(JSON.stringify({ error: "Prompt é obrigatório." }), {
         status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json" },
       });
     }
 
+    const selectedModel = model || process.env.GEMINI_MODEL || "gemini-3.8-flash";
+
     const ai = new GoogleGenAI({ apiKey });
     const response = await ai.models.generateContent({
-      model,
+      model: selectedModel,
       contents: prompt,
     });
 

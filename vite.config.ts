@@ -40,8 +40,9 @@ export default defineConfig(({ mode }) => {
 
             req.on('end', async () => {
               try {
-                const { prompt, model = 'gemini-2.0-flash' } = JSON.parse(body || '{}');
+                const { prompt, model } = JSON.parse(body || '{}');
                 const apiKey = env.GEMINI_API_KEY || process.env.GEMINI_API_KEY;
+                const selectedModel = model || env.GEMINI_MODEL || process.env.GEMINI_MODEL || 'gemini-3.8-flash';
 
                 if (!apiKey) {
                   res.statusCode = 500;
@@ -55,7 +56,7 @@ export default defineConfig(({ mode }) => {
                 }
 
                 const ai = new GoogleGenAI({ apiKey });
-                const aiRes = await ai.models.generateContent({ model, contents: prompt });
+                const aiRes = await ai.models.generateContent({ model: selectedModel, contents: prompt });
                 res.statusCode = 200;
                 res.setHeader('Content-Type', 'application/json');
                 res.end(JSON.stringify({ text: aiRes.text || '' }));

@@ -1,8 +1,7 @@
 import { GoogleGenAI } from "@google/genai";
 
-const MODEL_NAME = 'gemini-2.0-flash';
-
-// A IA deve ser configurada apenas no servidor/deploy, nunca no navegador de cada usuário.
+// O modelo deve ser configurado no ambiente do deploy para bater com a chave Gemini ativa.
+// Não fixar um nome de modelo no código do cliente.
 export const getApiKey = (): string => {
   return '';
 };
@@ -20,12 +19,14 @@ export const removeApiKey = () => {
 };
 
 // Função central de requisição à Inteligência Artificial (executa no servidor seguro)
-export const handleAiRequest = async (prompt: string, model: string = MODEL_NAME): Promise<string> => {
+export const handleAiRequest = async (prompt: string, model?: string): Promise<string> => {
   try {
+    const payload = model ? { prompt, model } : { prompt };
+
     const response = await fetch('/api/gemini', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt, model }),
+      body: JSON.stringify(payload),
     });
 
     if (response.ok) {

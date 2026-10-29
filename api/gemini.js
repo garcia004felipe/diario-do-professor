@@ -34,16 +34,18 @@ export default async function handler(req, res) {
 
     req.on('end', async () => {
       try {
-        const { prompt, model = 'gemini-2.0-flash' } = JSON.parse(body || '{}');
+        const { prompt, model } = JSON.parse(body || '{}');
 
         if (!prompt) {
           res.status(400).json({ error: 'Prompt é obrigatório.' });
           return;
         }
 
+        const selectedModel = model || process.env.GEMINI_MODEL || 'gemini-3.8-flash';
+
         const ai = new GoogleGenAI({ apiKey });
         const response = await ai.models.generateContent({
-          model,
+          model: selectedModel,
           contents: prompt,
         });
 
