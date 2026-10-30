@@ -41,7 +41,7 @@ export default async function handler(req, res) {
           return;
         }
 
-        const selectedModel = model || process.env.GEMINI_MODEL || 'gemini-3.8-flash';
+        const selectedModel = model || process.env.GEMINI_MODEL || 'gemini-1.5-flash';
 
         const ai = new GoogleGenAI({ apiKey });
         const response = await ai.models.generateContent({
