@@ -36,7 +36,18 @@ export const handleAiRequest = async (prompt: string, model?: string): Promise<s
 
     const errData = await response.json().catch(() => null);
     if (errData?.error) {
+      const errorMessage = String(errData.error).toLowerCase();
+      const isGeminiBusy = errorMessage.includes('temporariamente ocupada') ||
+        errorMessage.includes('high demand') ||
+        errorMessage.includes('unavailable') ||
+        errorMessage.includes('tente novamente em alguns minutos');
+
       console.error("Erro retornado pelo backend Gemini:", errData.error);
+
+      if (isGeminiBusy) {
+        return 'A IA está temporariamente ocupada. Tente novamente em alguns minutos.';
+      }
+
       return `Erro na IA: ${errData.error}`;
     }
 

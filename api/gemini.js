@@ -1,5 +1,41 @@
 import { GoogleGenAI } from '@google/genai';
 
+const isTransientGeminiError = (message = '') => {
+  const text = String(message).toLowerCase();
+  return (
+    text.includes('high demand') ||
+    text.includes('temporar') ||
+    text.includes('unavailable') ||
+    text.includes('503') ||
+    text.includes('429') ||
+    text.includes('rate limit') ||
+    text.includes('overloaded')
+  );
+};
+
+const friendlyGeminiUnavailableMessage = 'A IA está temporariamente ocupada. Tente novamente em alguns minutos.';
+
+const withGeminiRetry = async (fn, retries = 2) => {
+  let lastError;
+
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error;
+      const message = error?.message || '';
+
+      if (!isTransientGeminiError(message) || attempt === retries) {
+        throw error;
+      }
+
+      await new Promise(resolve => setTimeout(resolve, 800 * (attempt + 1)));
+    }
+  }
+
+  throw lastError;
+};
+
 export default async function handler(req, res) {
   const allowedOrigin = '*';
 
@@ -41,19 +77,27 @@ export default async function handler(req, res) {
           return;
         }
 
-        const selectedModel = model || process.env.GEMINI_MODEL || 'gemini-1.5-flash';
+        const selectedModel = model || process.env.GEMINI_MODEL || 'gemini-3.8-flash';
 
         const ai = new GoogleGenAI({ apiKey });
-        const response = await ai.models.generateContent({
-          model: selectedModel,
-          contents: prompt,
-        });
+        const response = await withGeminiRetry(async () => {
+          return await ai.models.generateContent({
+            model: selectedModel,
+            contents: prompt,
+          });
+        }, 2);
 
         res.status(200).json({ text: response.text || 'Sem resposta da IA.' });
       } catch (error) {
         console.error('Erro na API Gemini do Vercel:', error);
-        const message = error?.message || 'Erro ao consultar a Inteligência Artificial.';
-        res.status(500).json({ error: message });
+        const message = error?.message || '';
+
+        if (isTransientGeminiError(message)) {
+          res.status(503).json({ error: friendlyGeminiUnavailableMessage });
+          return;
+        }
+
+        res.status(500).json({ error: 'No momento não foi possível gerar a resposta. Tente novamente em alguns minutos.' });
       }
     });
   } catch (error) {

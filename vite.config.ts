@@ -42,7 +42,7 @@ export default defineConfig(({ mode }) => {
               try {
                 const { prompt, model } = JSON.parse(body || '{}');
                 const apiKey = env.GEMINI_API_KEY || process.env.GEMINI_API_KEY;
-                const selectedModel = model || env.GEMINI_MODEL || process.env.GEMINI_MODEL || 'gemini-1.5-flash';
+                const selectedModel = model || env.GEMINI_MODEL || process.env.GEMINI_MODEL || 'gemini-3.8-flash';
 
                 if (!apiKey) {
                   res.statusCode = 500;
