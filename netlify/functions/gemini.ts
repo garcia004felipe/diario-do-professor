@@ -36,6 +36,36 @@ const withGeminiRetry = async <T>(fn: () => Promise<T>, retries = 2): Promise<T>
   throw lastError;
 };
 
+const generateWithFallback = async <T>(
+  ai: GoogleGenAI,
+  prompt: string,
+  primaryModel: string,
+  fallbackModel: string
+): Promise<T> => {
+  let lastError: unknown;
+  const models = [...new Set([primaryModel, fallbackModel].filter(Boolean))];
+
+  for (const selectedModel of models) {
+    try {
+      return await withGeminiRetry(async () => {
+        return await ai.models.generateContent({
+          model: selectedModel,
+          contents: prompt,
+        });
+      }, 2);
+    } catch (error) {
+      lastError = error;
+      const message = error instanceof Error ? error.message : String(error ?? '');
+
+      if (!message.includes('404') && !isTransientGeminiError(message)) {
+        throw error;
+      }
+    }
+  }
+
+  throw lastError;
+};
+
 export default async (req: Request) => {
   const corsHeaders = {
     "Access-Control-Allow-Origin": "*",
@@ -80,15 +110,11 @@ export default async (req: Request) => {
       });
     }
 
-    const selectedModel = model || process.env.GEMINI_MODEL || "gemini-3.8-flash";
+    const primaryModel = model || "gemini-2.0-flash";
+    const fallbackModel = process.env.GEMINI_FALLBACK_MODEL || "gemini-1.5-flash";
 
     const ai = new GoogleGenAI({ apiKey });
-    const response = await withGeminiRetry(async () => {
-      return await ai.models.generateContent({
-        model: selectedModel,
-        contents: prompt,
-      });
-    }, 2);
+    const response = await generateWithFallback<any>(ai, prompt, primaryModel, fallbackModel);
 
     return new Response(
       JSON.stringify({ text: response.text || "Sem resposta da IA." }),

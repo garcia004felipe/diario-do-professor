@@ -16,7 +16,7 @@ export default defineConfig(({ mode }) => {
       {
         name: 'netlify-functions-dev-proxy',
         configureServer(server) {
-          server.middlewares.use('/.netlify/functions/gemini', async (req, res) => {
+          const handleGeminiRequest = async (req: any, res: any) => {
             if (req.method === 'OPTIONS') {
               res.statusCode = 204;
               res.setHeader('Access-Control-Allow-Origin', '*');
@@ -42,7 +42,8 @@ export default defineConfig(({ mode }) => {
               try {
                 const { prompt, model } = JSON.parse(body || '{}');
                 const apiKey = env.GEMINI_API_KEY || process.env.GEMINI_API_KEY;
-                const selectedModel = model || env.GEMINI_MODEL || process.env.GEMINI_MODEL || 'gemini-3.8-flash';
+                const primaryModel = model || 'gemini-2.0-flash';
+                const fallbackModel = env.GEMINI_FALLBACK_MODEL || process.env.GEMINI_FALLBACK_MODEL || 'gemini-1.5-flash';
 
                 if (!apiKey) {
                   res.statusCode = 500;
@@ -56,7 +57,21 @@ export default defineConfig(({ mode }) => {
                 }
 
                 const ai = new GoogleGenAI({ apiKey });
-                const aiRes = await ai.models.generateContent({ model: selectedModel, contents: prompt });
+                let aiRes;
+                let lastError;
+
+                for (const selectedModel of [...new Set([primaryModel, fallbackModel])]) {
+                  try {
+                    aiRes = await ai.models.generateContent({ model: selectedModel, contents: prompt });
+                    break;
+                  } catch (error) {
+                    lastError = error;
+                  }
+                }
+
+                if (!aiRes) {
+                  throw lastError;
+                }
                 res.statusCode = 200;
                 res.setHeader('Content-Type', 'application/json');
                 res.end(JSON.stringify({ text: aiRes.text || '' }));
@@ -66,7 +81,10 @@ export default defineConfig(({ mode }) => {
                 res.end(JSON.stringify({ error: err.message || 'Erro ao processar IA no servidor local' }));
               }
             });
-          });
+          };
+
+          server.middlewares.use('/api/gemini', handleGeminiRequest);
+          server.middlewares.use('/.netlify/functions/gemini', handleGeminiRequest);
         }
       }
     ],

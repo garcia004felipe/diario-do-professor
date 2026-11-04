@@ -20,6 +20,9 @@ export const removeApiKey = () => {
 
 // Função central de requisição à Inteligência Artificial (executa no servidor seguro)
 export const handleAiRequest = async (prompt: string, model?: string): Promise<string> => {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 45_000);
+
   try {
     const payload = model ? { prompt, model } : { prompt };
 
@@ -27,6 +30,7 @@ export const handleAiRequest = async (prompt: string, model?: string): Promise<s
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
+      signal: controller.signal,
     });
 
     if (response.ok) {
@@ -54,7 +58,12 @@ export const handleAiRequest = async (prompt: string, model?: string): Promise<s
     return "Erro na IA: O serviço de IA não respondeu corretamente. Configure a chave GEMINI_API_KEY no ambiente do servidor.";
   } catch (networkError) {
     console.warn("Função do servidor indisponível:", networkError);
+    if (networkError instanceof DOMException && networkError.name === 'AbortError') {
+      return "Erro na IA: A resposta demorou mais de 45 segundos. Simplifique o pedido ou tente novamente.";
+    }
     return "Erro na IA: O backend de IA não está disponível no servidor. Configure GEMINI_API_KEY no ambiente do deploy.";
+  } finally {
+    clearTimeout(timeoutId);
   }
 };
 

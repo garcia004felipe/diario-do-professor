@@ -80,7 +80,7 @@ export const generateStudentFeedbackPDF = async (student: Student): Promise<{ su
     // Parecer Gerado pela IA
     doc.setFontSize(14);
     doc.setFont('helvetica', 'bold');
-    doc.text('Parecer Descritivo (Gerado via Google Gemini IA)', 20, cursorY);
+    doc.text('Parecer Descritivo (Gerado por Inteligência Artificial)', 20, cursorY);
     cursorY += 10;
     
     doc.setFontSize(12);
