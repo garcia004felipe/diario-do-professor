@@ -36,9 +36,42 @@ const withGeminiRetry = async (fn, retries = 2) => {
   throw lastError;
 };
 
-const generateWithFallback = async (ai, prompt, primaryModel, fallbackModel) => {
+const generateWithFallback = async (ai, apiKey, prompt, primaryModel, fallbackModel) => {
   let lastError;
-  const models = [...new Set([primaryModel, fallbackModel].filter(Boolean))];
+  const preferredModels = [...new Set([primaryModel, fallbackModel].filter(Boolean))];
+  const models = [...preferredModels];
+
+  try {
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey)}`
+    );
+
+    if (response.ok) {
+      const data = await response.json();
+      const availableModels = (data.models || [])
+        .filter((item) =>
+          (item.supportedGenerationMethods || []).includes('generateContent') &&
+          String(item.name || '').includes('gemini')
+        )
+        .map((item) => item.name.replace(/^models\//, ''));
+
+      const rankedModels = [
+        ...availableModels.filter((name) => name.includes('gemini-2.0-flash')),
+        ...availableModels.filter((name) => name.includes('gemini-1.5-flash')),
+        ...availableModels.filter((name) => name.includes('gemini-2.5-flash-lite')),
+        ...availableModels.filter((name) => name.includes('gemini-2.5-flash')),
+      ];
+
+      for (const name of rankedModels) {
+        if (!models.includes(name)) models.push(name);
+      }
+      for (const name of availableModels) {
+        if (!models.includes(name)) models.push(name);
+      }
+    }
+  } catch {
+    // Mantém os modelos configurados como fallback.
+  }
 
   for (const selectedModel of models) {
     try {
@@ -106,7 +139,7 @@ export default async function handler(req, res) {
         const fallbackModel = process.env.GEMINI_FALLBACK_MODEL || 'gemini-1.5-flash';
 
         const ai = new GoogleGenAI({ apiKey });
-        const response = await generateWithFallback(ai, prompt, primaryModel, fallbackModel);
+        const response = await generateWithFallback(ai, apiKey, prompt, primaryModel, fallbackModel);
 
         res.status(200).json({ text: response.text || 'Sem resposta da IA.' });
       } catch (error) {
