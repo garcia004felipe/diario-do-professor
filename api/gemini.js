@@ -14,6 +14,7 @@ const isTransientGeminiError = (message = '') => {
 };
 
 const friendlyGeminiUnavailableMessage = 'A IA está temporariamente ocupada. Tente novamente em alguns minutos.';
+const friendlyQuotaMessage = 'Sua chave da Gemini atingiu o limite de uso atual. Aguarde a renovação da cota ou configure uma chave com cota disponível.';
 
 const withGeminiRetry = async (fn, retries = 2) => {
   let lastError;
@@ -84,6 +85,18 @@ const generateWithFallback = async (ai, apiKey, prompt, primaryModel, fallbackMo
     } catch (error) {
       lastError = error;
       const message = String(error?.message || '');
+      const lowerMessage = message.toLowerCase();
+
+      if (
+        lowerMessage.includes('429') ||
+        lowerMessage.includes('quota') ||
+        lowerMessage.includes('resource_exhausted') ||
+        lowerMessage.includes('rate limit')
+      ) {
+        const quotaError = new Error(friendlyQuotaMessage);
+        quotaError.code = 'QUOTA_EXHAUSTED';
+        throw quotaError;
+      }
 
       if (!message.includes('404') && !isTransientGeminiError(message)) {
         throw error;
@@ -145,6 +158,11 @@ export default async function handler(req, res) {
       } catch (error) {
         console.error('Erro na API Gemini do Vercel:', error);
         const message = error?.message || '';
+
+        if (error?.code === 'QUOTA_EXHAUSTED') {
+          res.status(429).json({ error: friendlyQuotaMessage });
+          return;
+        }
 
         if (isTransientGeminiError(message)) {
           res.status(503).json({ error: friendlyGeminiUnavailableMessage });
