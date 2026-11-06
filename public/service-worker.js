@@ -1,14 +1,13 @@
-const CACHE_NAME = 'diario-professor-v1';
-const STATIC_CACHE = 'static-v1';
-const DYNAMIC_CACHE = 'dynamic-v1';
+const CACHE_NAME = 'diario-professor-v2';
+const STATIC_CACHE = 'static-v2';
+const DYNAMIC_CACHE = 'dynamic-v2';
 
 // Arquivos essenciais para cache
 const STATIC_ASSETS = [
     '/',
     '/index.html',
     '/manifest.json',
-    '/icon-192.png',
-    '/icon-512.png'
+    '/icon.svg'
 ];
 
 // Instalar Service Worker
@@ -43,29 +42,33 @@ self.addEventListener('fetch', (event) => {
     const { request } = event;
     const url = new URL(request.url);
 
-    // Não cachear requisições do Supabase
-    if (url.origin.includes('supabase.co')) {
-        return event.respondWith(fetch(request));
+    // Ignorar requisições não-GET, APIs de backend e Supabase (deixar a rede cuidar)
+    if (
+        request.method !== 'GET' ||
+        url.pathname.startsWith('/api') ||
+        url.pathname.startsWith('/.netlify') ||
+        url.origin.includes('supabase.co')
+    ) {
+        return;
     }
 
     // Estratégia: Network First, fallback para Cache
     event.respondWith(
         fetch(request)
             .then((response) => {
-                // Clonar resposta para cache
-                const responseClone = response.clone();
-                caches.open(DYNAMIC_CACHE).then((cache) => {
-                    cache.put(request, responseClone);
-                });
+                if (response && response.status === 200 && response.type === 'basic') {
+                    const responseClone = response.clone();
+                    caches.open(DYNAMIC_CACHE).then((cache) => {
+                        cache.put(request, responseClone);
+                    });
+                }
                 return response;
             })
             .catch(() => {
-                // Se falhar, tentar cache
                 return caches.match(request).then((cachedResponse) => {
                     if (cachedResponse) {
                         return cachedResponse;
                     }
-                    // Se não houver cache, retornar página offline
                     if (request.destination === 'document') {
                         return caches.match('/index.html');
                     }
@@ -83,6 +86,5 @@ self.addEventListener('sync', (event) => {
 });
 
 async function syncData() {
-    // Implementar sincronização de dados offline
     console.log('[SW] Syncing offline data...');
 }

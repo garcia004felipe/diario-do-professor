@@ -21,47 +21,65 @@ export const removeApiKey = () => {
 // Função central de requisição à Inteligência Artificial (executa no servidor seguro)
 export const handleAiRequest = async (prompt: string, model?: string): Promise<string> => {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 110_000);
+  const timeoutId = setTimeout(() => controller.abort(), 75_000);
+
+  const payload = model ? { prompt, model } : { prompt };
+  const endpoints = ['/api/gemini', '/.netlify/functions/gemini'];
+
+  let lastError = '';
 
   try {
-    const payload = model ? { prompt, model } : { prompt };
+    for (const endpoint of endpoints) {
+      try {
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+          signal: controller.signal,
+        });
 
-    const response = await fetch('/api/gemini', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-      signal: controller.signal,
-    });
+        const contentType = response.headers.get('content-type') || '';
 
-    if (response.ok) {
-      const data = await response.json();
-      return data.text || "Sem resposta da IA.";
-    }
+        // Se a rota foi capturada pelo SPA e retornou HTML, tenta o endpoint direto
+        if (contentType.includes('text/html')) {
+          console.warn(`Endpoint ${endpoint} retornou HTML (redirecionamento do SPA). Tentando próximo endpoint...`);
+          lastError = `O endpoint ${endpoint} retornou HTML em vez de JSON da IA`;
+          continue;
+        }
 
-    const errData = await response.json().catch(() => null);
-    if (errData?.error) {
-      const errorMessage = String(errData.error).toLowerCase();
-      const isGeminiBusy = errorMessage.includes('temporariamente ocupada') ||
-        errorMessage.includes('high demand') ||
-        errorMessage.includes('unavailable') ||
-        errorMessage.includes('tente novamente em alguns minutos');
+        if (response.ok) {
+          const data = await response.json();
+          return data.text || "Sem resposta da IA.";
+        }
 
-      console.error("Erro retornado pelo backend Gemini:", errData.error);
+        const errData = await response.json().catch(() => null);
+        if (errData?.error) {
+          const errorMessage = String(errData.error);
+          const lower = errorMessage.toLowerCase();
+          const isGeminiBusy = lower.includes('temporariamente ocupada') ||
+            lower.includes('high demand') ||
+            lower.includes('unavailable') ||
+            lower.includes('tente novamente em alguns minutos');
 
-      if (isGeminiBusy) {
-        return 'A IA está temporariamente ocupada. Tente novamente em alguns minutos.';
+          console.error("Erro retornado pelo backend Gemini:", errData.error);
+
+          if (isGeminiBusy) {
+            return 'A IA está temporariamente ocupada. Tente novamente em alguns minutos.';
+          }
+
+          return `Erro na IA: ${errorMessage}`;
+        }
+
+        lastError = `Status ${response.status} ao consultar ${endpoint}`;
+      } catch (err: any) {
+        if (err instanceof DOMException && err.name === 'AbortError') {
+          return "Erro na IA: A resposta demorou mais de 1 minuto. Simplifique o pedido ou tente novamente.";
+        }
+        lastError = err?.message || 'Erro de rede';
       }
-
-      return `Erro na IA: ${errData.error}`;
     }
 
-    return "Erro na IA: O serviço de IA não respondeu corretamente. Configure a chave GEMINI_API_KEY no ambiente do servidor.";
-  } catch (networkError) {
-    console.warn("Função do servidor indisponível:", networkError);
-    if (networkError instanceof DOMException && networkError.name === 'AbortError') {
-      return "Erro na IA: A resposta demorou mais de 1 minuto e 50 segundos. Simplifique o pedido ou tente novamente.";
-    }
-    return "Erro na IA: O backend de IA não está disponível no servidor. Configure GEMINI_API_KEY no ambiente do deploy.";
+    return `Erro na IA: Não foi possível conectar ao servidor da IA (${lastError}). Verifique se a variável GEMINI_API_KEY está configurada no Netlify (Site configuration -> Environment variables).`;
   } finally {
     clearTimeout(timeoutId);
   }
