@@ -302,57 +302,150 @@ export const Students: React.FC<StudentsProps> = ({ students, classGroups, onAdd
 
   const currentSwipeStudent = swipeQueue[currentSwipeIndex];
 
+  // Atalhos de teclado para chamada rápida
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!isAttendanceMode || !currentSwipeStudent) return;
+
+      if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') {
+        e.preventDefault();
+        handleSwipe({ offset: { x: 200 }, velocity: 600 }, currentSwipeStudent);
+      } else if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') {
+        e.preventDefault();
+        handleSwipe({ offset: { x: -200 }, velocity: -600 }, currentSwipeStudent);
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        handleSwipe({ offset: { x: 200 }, velocity: 600 }, currentSwipeStudent);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isAttendanceMode, currentSwipeStudent, handleSwipe]);
+
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    const allowedExtensions = /\.(xlsx|xls|csv)$/i;
+    if (!allowedExtensions.test(file.name)) {
+      showToast('Formato inválido. Selecione um arquivo Excel ou CSV.', 'error');
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
+    if (file.size === 0) {
+      showToast('O arquivo está vazio.', 'error');
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      showToast('O arquivo é maior que 10 MB. Divida a planilha e tente novamente.', 'error');
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
 
     showToast('Processando planilha...', 'info');
 
     const reader = new FileReader();
     reader.onload = (evt) => {
       try {
-        const bstr = evt.target?.result;
-        const wb = XLSX.read(bstr, { type: 'binary' });
+        const buffer = evt.target?.result;
+        if (!(buffer instanceof ArrayBuffer)) {
+          showToast('Arquivo vazio ou ilegível.', 'error');
+          return;
+        }
+        const wb = XLSX.read(buffer, { type: 'array' });
+        if (!wb.SheetNames || wb.SheetNames.length === 0) {
+          showToast('Nenhuma aba encontrada na planilha.', 'error');
+          return;
+        }
         const wsname = wb.SheetNames[0];
         const ws = wb.Sheets[wsname];
-        const data = XLSX.utils.sheet_to_json(ws);
-        
+        const data = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: '' });
+
+        if (!Array.isArray(data) || data.length === 0) {
+          showToast('Nenhum dado encontrado na planilha.', 'error');
+          return;
+        }
+
+        const normalizeHeader = (value: unknown) => String(value)
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .toLowerCase()
+          .replace(/[^a-z0-9]/g, '');
+
+        const getValue = (row: Record<string, unknown>, aliases: string[]) => {
+          const normalizedAliases = aliases.map(normalizeHeader);
+          const entry = Object.entries(row).find(([header]) =>
+            normalizedAliases.includes(normalizeHeader(header))
+          );
+          return entry?.[1];
+        };
+
         let importedCount = 0;
-        data.forEach((row: any) => {
-          const name = row['Nome'] || row['NOME'] || row['name'] || row['Name'] || row['Aluno'];
-          if (name) {
-            const ageStr = row['Idade'] || row['IDADE'] || row['age'] || row['Age'] || '0';
-            const age = parseInt(ageStr, 10) || 0;
-            const className = row['Turma'] || row['TURMA'] || row['class'] || row['Class'] || '';
-            const needs = row['Necessidades Especiais'] || row['Necessidades'] || row['Needs'] || 'Nenhuma';
-            
-            let cId = '';
-            if (className) {
-              const foundClass = classGroups.find(c => c.name.toLowerCase() === className.toLowerCase());
-              if (foundClass) cId = foundClass.id;
-            }
-            if (!cId && classGroups.length > 0) {
-                cId = classGroups[0].id; // Fallback to first class
-            }
-            
-            onAdd({
-              name: String(name).trim(),
-              age,
-              classId: cId,
-              needs: String(needs).trim(),
-              subjects: []
-            });
-            importedCount++;
+        let unmatchedClassCount = 0;
+        let invalidRowCount = 0;
+        let missingClassCount = 0;
+
+        data.forEach((row) => {
+          const rawName = getValue(row, ['Nome', 'Aluno', 'Name']);
+          const rawClassName = getValue(row, ['Turma', 'Classe', 'Class', 'Serie']);
+          const rawAge = getValue(row, ['Idade', 'Age']);
+          const rawNeeds = getValue(row, ['Necessidades Especiais', 'Necessidades', 'Needs']);
+
+          const name = String(rawName ?? '').trim();
+          const className = String(rawClassName ?? '').trim();
+
+          if (!name) {
+            invalidRowCount++;
+            return;
           }
+          if (!className) {
+            missingClassCount++;
+            return;
+          }
+
+          const foundClass = classGroups.find((item) =>
+            item.name.trim().toLowerCase() === className.toLowerCase()
+          );
+          if (!foundClass) {
+            unmatchedClassCount++;
+            return;
+          }
+
+          const parsedAge = Number.parseInt(String(rawAge ?? '0'), 10);
+          const age = Number.isFinite(parsedAge) && parsedAge >= 0 && parsedAge <= 150 ? parsedAge : 0;
+          const needs = String(rawNeeds ?? '').trim() || 'Nenhuma';
+
+          onAdd({
+            name,
+            age,
+            classId: foundClass.id,
+            needs,
+            subjects: []
+          });
+          importedCount++;
         });
-        showToast(`Importação concluída! ${importedCount} alunos encontrados.`, 'success');
+
+        if (importedCount === 0) {
+          showToast('Nenhum aluno válido foi importado. Confira os nomes das turmas e a coluna "Nome".', 'error');
+        } else {
+          let msg = `Importação concluída! ${importedCount} aluno(s) cadastrado(s).`;
+          if (unmatchedClassCount > 0) {
+            msg += ` ${unmatchedClassCount} linha(s) ignorada(s) por turma inexistente.`;
+          }
+          if (missingClassCount > 0) msg += ` ${missingClassCount} linha(s) sem turma.`;
+          if (invalidRowCount > 0) msg += ` ${invalidRowCount} linha(s) sem nome.`;
+          showToast(msg, 'success');
+        }
       } catch (err) {
         console.error('Erro ao processar planilha', err);
         showToast('Erro ao ler o arquivo. Certifique-se que é um Excel ou CSV válido.', 'error');
       }
     };
-    reader.readAsBinaryString(file);
-    
+    reader.onerror = () => showToast('Não foi possível ler o arquivo selecionado.', 'error');
+    reader.readAsArrayBuffer(file);
+
     // Reset file input
     if (fileInputRef.current) fileInputRef.current.value = '';
   };

@@ -1,7 +1,10 @@
-import React, { useState, useMemo } from 'react';
-import { Users, Calendar, AlertCircle, TrendingUp, Filter, ListFilter } from 'lucide-react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { Users, Calendar, AlertCircle, TrendingUp, Filter, ListFilter, Sparkles, Download, Upload } from 'lucide-react';
 import { Student, ViewState, ClassGroup } from '../types';
-import { motion } from 'framer-motion';
+import { motion, type Variants } from 'framer-motion';
+import { generateMorningSummary } from '../services/geminiService';
+import { ExportService } from '../services/exportService';
+import { useToast } from '../hooks/useToast';
 
 interface DashboardProps {
   totalStudents: number;
@@ -19,16 +22,56 @@ const CHART_COLORS = [
   { id: 'low', label: 'Abaixo (<75%)', color: '#f59e0b', tailwind: 'bg-amber-500', text: 'text-amber-700', bg: 'bg-amber-50' },
 ];
 
-export const Dashboard: React.FC<DashboardProps> = ({ 
-  totalStudents, 
-  totalClasses, 
-  extraClassesToday, 
-  students, 
+export const Dashboard: React.FC<DashboardProps> = ({
+  totalStudents,
+  totalClasses,
+  extraClassesToday,
+  students,
   classes,
-  onNavigate 
+  onNavigate
 }) => {
+  const { showToast } = useToast();
   const [selectedClassId, setSelectedClassId] = useState<string>('all');
   const [activeChartFilter, setActiveChartFilter] = useState<string | null>(null);
+  const [morningSummary, setMorningSummary] = useState<string | null>(null);
+  const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
+
+  // Gera resumo matinal com IA ao montar
+  useEffect(() => {
+    const generateSummary = async () => {
+      if (!students || students.length === 0) return;
+
+      setIsGeneratingSummary(true);
+
+      try {
+        const lowAttendance = students.filter(s => s.attendanceRate < 75).length;
+        const lowGrades = students.filter(s => {
+          if (s.subjects && s.subjects.length > 0) {
+            const avg = s.subjects.reduce((sum, subj) => sum + subj.grade, 0) / s.subjects.length;
+            return avg < 6.0;
+          }
+          return false;
+        }).length;
+
+        const summary = await generateMorningSummary(
+          students.length,
+          classes.length,
+          lowAttendance,
+          lowGrades
+        );
+
+        if (summary && !summary.includes('Erro na IA') && summary !== 'MISSING_KEY' && summary !== 'INVALID_KEY') {
+          setMorningSummary(summary);
+        }
+      } catch (err) {
+        console.error('Erro ao gerar resumo matinal', err);
+      } finally {
+        setIsGeneratingSummary(false);
+      }
+    };
+
+    generateSummary();
+  }, [students, classes]);
 
   // 1. Filtra alunos baseado na turma selecionada
   const classFilteredStudents = useMemo(() => {
@@ -113,14 +156,14 @@ export const Dashboard: React.FC<DashboardProps> = ({
   };
 
   // Animações
-  const containerVariants = {
+  const containerVariants: Variants = {
     hidden: { opacity: 0 },
     show: { opacity: 1, transition: { staggerChildren: 0.1 } }
   };
   
-  const itemVariants = {
+  const itemVariants: Variants = {
     hidden: { opacity: 0, y: 20 },
-    show: { opacity: 1, y: 0, transition: { type: 'spring', stiffness: 300, damping: 24 } }
+    show: { opacity: 1, y: 0 }
   };
 
   return (
@@ -191,6 +234,76 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </div>
           <div className="p-3 bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 rounded-lg group-hover:bg-amber-100 dark:group-hover:bg-amber-900/50 transition-colors">
             <AlertCircle size={24} />
+          </div>
+        </div>
+
+        {/* Card Resumo Matinal IA */}
+        <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-slate-700 flex flex-col gap-3 overflow-hidden relative group">
+          <div className="absolute top-0 right-0 p-3 opacity-20 group-hover:opacity-40 transition-opacity">
+            <Sparkles size={32} className="text-indigo-400 dark:text-indigo-300" />
+          </div>
+          <div className="flex items-start gap-3">
+            <div className="p-3 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-lg">
+              <Sparkles size={20} />
+            </div>
+            <div className="flex-1">
+              <p className="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Resumo Matinal</p>
+              <p className="text-sm text-gray-800 dark:text-gray-200 leading-relaxed">
+                {isGeneratingSummary ? 'Carregando insights da IA...' : morningSummary || 'Sem resumo disponível'}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Card Backup/Restore */}
+        <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-slate-700 flex flex-col gap-4 group">
+          <div className="flex items-start gap-3">
+            <div className="p-3 bg-brand-50 dark:bg-brand-900/30 text-brand-600 dark:text-brand-400 rounded-lg">
+              <Download size={20} />
+            </div>
+            <div className="flex-1">
+              <p className="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Backup & Restore</p>
+              <p className="text-sm text-gray-800 dark:text-gray-200 leading-relaxed mb-3">
+                Exporte ou importe todos os dados do diário em formato JSON.
+              </p>
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={() => {
+                const data = {
+                  students,
+                  classes,
+                  exportedAt: new Date().toISOString(),
+                };
+                ExportService.exportToJSON(data);
+                showToast('Backup exportado com sucesso!', 'success');
+              }}
+              disabled={students.length === 0}
+              className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 disabled:bg-gray-300 disabled:text-gray-500 transition-colors font-medium"
+            >
+              <Download size={16} />
+              <span>Exportar Backup</span>
+            </button>
+            <label className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors font-medium cursor-pointer">
+              <Upload size={16} />
+              <span>Importar Backup</span>
+              <input
+                type="file"
+                accept=".json"
+                className="hidden"
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  try {
+                    const importedData = await ExportService.importFromJSON(file);
+                    showToast(`Backup importado! Encontrados ${importedData.students?.length || 0} alunos e ${importedData.classes?.length || 0} turmas.`, 'success');
+                  } catch (error) {
+                    showToast('Erro ao importar backup: Arquivo inválido.', 'error');
+                  }
+                }}
+              />
+            </label>
           </div>
         </div>
       </motion.div>

@@ -46,11 +46,11 @@ const generateWithFallback = async <T>(
 
   for (const selectedModel of models) {
     try {
-      return await withGeminiRetry(async () => {
+      return await withGeminiRetry(async (): Promise<T> => {
         return await ai.models.generateContent({
           model: selectedModel,
           contents: prompt,
-        });
+        }) as T;
       }, 2);
     } catch (error) {
       lastError = error;
