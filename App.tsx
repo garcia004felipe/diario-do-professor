@@ -431,6 +431,161 @@ export default function App() {
     return null;
   };
 
+  const handleExportBackup = () => {
+    ExportService.exportToJSON({
+      schemaVersion: 1,
+      app: 'diario-do-professor',
+      exportedAt: new Date().toISOString(),
+      profile: currentUser,
+      classes,
+      students,
+      extraClasses,
+      reports,
+      aiContents,
+      notifications,
+      communications
+    });
+    showToast('Backup completo exportado com sucesso!', 'success');
+  };
+
+  const handleImportBackup = async (file: File): Promise<string> => {
+    if (!navigator.onLine) {
+      throw new Error('Conecte-se à internet para restaurar um backup.');
+    }
+
+    const backup = await ExportService.importFromJSON(file);
+    const totals = {
+      classes: backup.classes.length,
+      students: backup.students.length,
+      extraClasses: backup.extraClasses.length,
+      reports: backup.reports.length,
+      aiContents: backup.aiContents.length,
+      notifications: backup.notifications.length,
+      communications: backup.communications.length
+    };
+    const confirmed = window.confirm(
+      `Restaurar este backup por mesclagem?\n\n` +
+      `Itens encontrados: ${totals.classes} turmas, ${totals.students} alunos, ` +
+      `${totals.extraClasses} aulas extras, ${totals.reports} relatórios, ` +
+      `${totals.aiContents} conteúdos de IA, ${totals.notifications} notificações e ` +
+      `${totals.communications} comunicações.\n\n` +
+      `Dados existentes não serão excluídos.`
+    );
+    if (!confirmed) throw new Error('Restauração cancelada.');
+
+    const activeUserId = await getActiveUserId();
+    if (!activeUserId) throw new Error('Faça login para restaurar o backup.');
+
+    let imported = 0;
+    let ignored = 0;
+    const classIdMap = new Map<string, string>();
+
+    for (const backupClass of backup.classes) {
+      const existing = classes.find(item => item.id === backupClass.id);
+      if (existing) {
+        classIdMap.set(backupClass.id, existing.id);
+        ignored++;
+        continue;
+      }
+      const created = await db.createClassGroup(activeUserId, {
+        name: backupClass.name,
+        grade: backupClass.grade,
+        shift: backupClass.shift,
+        teacherName: backupClass.teacherName
+      });
+      classIdMap.set(backupClass.id, created.id);
+      imported++;
+    }
+
+    const studentIdMap = new Map<string, string>();
+    for (const backupStudent of backup.students) {
+      const existing = students.find(item => item.id === backupStudent.id);
+      if (existing) {
+        studentIdMap.set(backupStudent.id, existing.id);
+        ignored++;
+        continue;
+      }
+      const mappedClassId = classIdMap.get(backupStudent.classId) || backupStudent.classId;
+      if (!classes.some(item => item.id === mappedClassId) &&
+          !backup.classes.some(item => item.id === backupStudent.classId && classIdMap.has(item.id))) {
+        ignored++;
+        continue;
+      }
+      const { id: _id, ...studentData } = backupStudent;
+      const created = await db.createStudent(activeUserId, {
+        ...studentData,
+        classId: mappedClassId
+      });
+      studentIdMap.set(backupStudent.id, created.id);
+      imported++;
+    }
+
+    for (const backupExtraClass of backup.extraClasses) {
+      if (extraClasses.some(item => item.id === backupExtraClass.id)) {
+        ignored++;
+        continue;
+      }
+      const { id: _id, ...extraData } = backupExtraClass;
+      await db.createExtraClass(activeUserId, {
+        ...extraData,
+        classId: classIdMap.get(extraData.classId) || extraData.classId,
+        participants: extraData.participants.map(studentId => studentIdMap.get(studentId) || studentId)
+      });
+      imported++;
+    }
+
+    for (const backupReport of backup.reports) {
+      if (reports.some(item => item.id === backupReport.id)) {
+        ignored++;
+        continue;
+      }
+      const { id: _id, ...reportData } = backupReport;
+      await db.createReport(activeUserId, {
+        ...reportData,
+        studentId: studentIdMap.get(reportData.studentId) || reportData.studentId
+      });
+      imported++;
+    }
+
+    for (const content of backup.aiContents) {
+      if (aiContents.some(item => item.id === content.id)) {
+        ignored++;
+        continue;
+      }
+      const { id: _id, createdAt: _createdAt, ...contentData } = content;
+      await db.createAiContent(activeUserId, contentData);
+      imported++;
+    }
+
+    for (const notification of backup.notifications) {
+      if (notifications.some(item => item.id === notification.id)) {
+        ignored++;
+        continue;
+      }
+      const { id: _id, ...notificationData } = notification;
+      await db.createNotification(activeUserId, notificationData);
+      imported++;
+    }
+
+    for (const communication of backup.communications) {
+      if (communications.some(item => item.id === communication.id)) {
+        ignored++;
+        continue;
+      }
+      const { id: _id, createdAt: _createdAt, ...communicationData } = communication;
+      await db.createCommunication(activeUserId, {
+        ...communicationData,
+        classId: communicationData.classId
+          ? (classIdMap.get(communicationData.classId) || communicationData.classId)
+          : null
+      });
+      imported++;
+    }
+
+    window.setTimeout(() => window.location.reload(), 700);
+    return `${imported} itens restaurados; ${ignored} itens já existentes foram ignorados.`;
+  };
+
   const handleDeleteStudent = async (id: string) => {
     const student = students.find(s => s.id === id);
     if (student) {
@@ -596,17 +751,17 @@ export default function App() {
     }
   };
 
-  const handleExportClass = (classId: string) => {
+  const handleExportClass = (classId: string, template: 'classico' | 'moderno' | 'colorido' | 'minimalista' = 'classico') => {
     const classGroup = classes.find(c => c.id === classId);
     if (!classGroup) {
       console.warn('⚠️ Turma não encontrada para exportação:', classId);
       return;
     }
 
-    console.log('📄 Iniciando exportação de boletins para:', classGroup.name);
+    console.log('📄 Iniciando exportação de boletins para:', classGroup.name, 'com modelo:', template);
 
     try {
-      const result = ExportService.exportClassBulletin(classGroup, students, reports);
+      const result = ExportService.exportClassBulletin(classGroup, students, reports, template);
       if (result.success) {
         showToast(result.message, 'success');
       } else {
@@ -900,6 +1055,8 @@ export default function App() {
             students={students}
             classes={classes}
             onNavigate={setCurrentView}
+            onExportBackup={handleExportBackup}
+            onImportBackup={handleImportBackup}
           />
         );
       case ViewState.STUDENTS:

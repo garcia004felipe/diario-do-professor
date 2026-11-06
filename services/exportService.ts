@@ -1,6 +1,29 @@
 import jsPDF from 'jspdf';
 import * as XLSX from 'xlsx';
-import { Report, Student, ClassGroup, ExtraClass } from '../types';
+import {
+    Report,
+    Student,
+    ClassGroup,
+    ExtraClass,
+    AiGeneratedContent,
+    Communication,
+    NotificationItem,
+    UserProfile
+} from '../types';
+
+export interface BackupPayload {
+    schemaVersion: 1;
+    app: 'diario-do-professor';
+    exportedAt: string;
+    profile: UserProfile | null;
+    classes: ClassGroup[];
+    students: Student[];
+    extraClasses: ExtraClass[];
+    reports: Report[];
+    aiContents: AiGeneratedContent[];
+    notifications: NotificationItem[];
+    communications: Communication[];
+}
 
 export class ExportService {
     /**
@@ -60,10 +83,19 @@ export class ExportService {
 
     /**
      * Exporta boletim completo de uma turma (Um aluno por página)
+     * @param classGroup Turma
+     * @param students Alunos
+     * @param allReports Relatórios
+     * @param template Modelo de boletim: 'classico', 'moderno', 'colorido', 'minimalista'
      */
-    static exportClassBulletin(classGroup: ClassGroup, students: Student[], allReports: Report[]): { success: boolean; message: string; count: number } {
+    static exportClassBulletin(
+        classGroup: ClassGroup,
+        students: Student[],
+        allReports: Report[],
+        template: 'classico' | 'moderno' | 'colorido' | 'minimalista' = 'classico'
+    ): { success: boolean; message: string; count: number } {
         try {
-            console.log('🔧 Iniciando exportClassBulletin...');
+            console.log('🔧 Iniciando exportClassBulletin com template:', template);
             const doc = new jsPDF();
 
             // Filtrar apenas alunos desta turma
@@ -82,6 +114,15 @@ export class ExportService {
                 return String(val);
             };
 
+            // Configurações de templates
+            const templates: Record<string, { primaryColor: [number, number, number]; secondaryColor: [number, number, number]; accentColor: [number, number, number]; showColorBar: boolean; showIcons: boolean }> = {
+                classico: { primaryColor: [79, 70, 229], secondaryColor: [30, 41, 59], accentColor: [148, 163, 184], showColorBar: true, showIcons: false },
+                moderno: { primaryColor: [16, 185, 129], secondaryColor: [15, 23, 42], accentColor: [52, 211, 153], showColorBar: true, showIcons: true },
+                colorido: { primaryColor: [234, 179, 8], secondaryColor: [120, 53, 15], accentColor: [249, 115, 22], showColorBar: true, showIcons: true },
+                minimalista: { primaryColor: [71, 85, 105], secondaryColor: [30, 41, 59], accentColor: [203, 213, 225], showColorBar: false, showIcons: false },
+            };
+            const config = templates[template];
+
             classStudents.forEach((student, index) => {
                 try {
                     console.log(`  📄 Processando aluno ${index + 1}/${classStudents.length}: ${student.name}`);
@@ -90,41 +131,58 @@ export class ExportService {
                     const studentReports = (allReports || [])
                         .filter(r => r.studentId === student.id)
                         .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-                    
+
                     const latestReport = studentReports.length > 0 ? studentReports[0] : null;
 
                     const marginX = 20;
                     let currentY = 20;
 
                     // --- Cabeçalho ---
-                    doc.setFillColor(79, 70, 229);
-                    doc.rect(0, 0, 210, 40, 'F');
+                    if (config.showColorBar) {
+                        doc.setFillColor(...config.primaryColor);
+                        doc.rect(0, 0, 210, 40, 'F');
+                    } else {
+                        doc.setFillColor(248, 250, 252);
+                        doc.rect(0, 0, 210, 40, 'F');
+                        doc.setDrawColor(...config.accentColor);
+                        doc.setLineWidth(1);
+                        doc.line(0, 40, 210, 40);
+                    }
 
-                    doc.setTextColor(255, 255, 255);
+                    if (config.showColorBar) {
+                        doc.setTextColor(255, 255, 255);
+                    } else {
+                        doc.setTextColor(...config.secondaryColor);
+                    }
                     doc.setFontSize(22);
                     doc.setFont('helvetica', 'bold');
-                    doc.text('Boletim de Desempenho', marginX, 22);
-                    
+                    const titlePrefix = config.showIcons ? '📋 ' : '';
+                    doc.text(`${titlePrefix}Boletim de Desempenho`, marginX, 22);
+
                     doc.setFontSize(12);
                     doc.setFont('helvetica', 'normal');
-                    doc.text(`${safe(classGroup.name)} \u2022 ${safe(classGroup.grade)}`, marginX, 32);
+                    doc.text(`${safe(classGroup.name)} • ${safe(classGroup.grade)}`, marginX, 32);
 
                     // --- Dados do Aluno ---
                     currentY = 55;
-                    doc.setTextColor(30, 41, 59);
-                    
+                    doc.setTextColor(...config.secondaryColor);
+
                     doc.setFontSize(16);
                     doc.setFont('helvetica', 'bold');
-                    doc.text(`Aluno(a): ${safe(student.name)}`, marginX, currentY);
+                    const namePrefix = config.showIcons ? '👤 ' : '';
+                    doc.text(`${namePrefix}Aluno(a): ${safe(student.name)}`, marginX, currentY);
                     currentY += 10;
 
                     doc.setFontSize(11);
                     doc.setFont('helvetica', 'normal');
-                    doc.text(`Idade: ${safe(student.age)} anos`, marginX, currentY);
-                    doc.text(`Frequencia Global: ${safe(student.attendanceRate)}%`, 100, currentY);
+                    const agePrefix = config.showIcons ? '🎂 ' : '';
+                    const freqPrefix = config.showIcons ? '📊 ' : '';
+                    doc.text(`${agePrefix}Idade: ${safe(student.age)} anos`, marginX, currentY);
+                    doc.text(`${freqPrefix}Frequencia Global: ${safe(student.attendanceRate)}%`, 100, currentY);
                     currentY += 8;
 
-                    doc.text(`Professor Responsavel: ${safe(classGroup.teacherName || 'Nao informado')}`, marginX, currentY);
+                    const teacherPrefix = config.showIcons ? '👩‍🏫 ' : '';
+                    doc.text(`${teacherPrefix}Professor Responsavel: ${safe(classGroup.teacherName || 'Nao informado')}`, marginX, currentY);
                     currentY += 8;
 
                     doc.text(`Observacoes Medicas: ${safe(student.needs || 'Nenhuma restricao registrada')}`, marginX, currentY);
@@ -133,28 +191,32 @@ export class ExportService {
                     // --- Tabela de Notas ---
                     doc.setFontSize(14);
                     doc.setFont('helvetica', 'bold');
-                    doc.text('Desempenho por Disciplina', marginX, currentY);
+                    const subjectTitle = config.showIcons ? '📚 ' : '';
+                    doc.text(`${subjectTitle}Desempenho por Disciplina`, marginX, currentY);
                     currentY += 10;
 
                     if (student.subjects && student.subjects.length > 0) {
                         doc.setFontSize(10);
                         doc.setFont('helvetica', 'bold');
-                        doc.setTextColor(100, 116, 139);
+                        doc.setTextColor(...config.accentColor);
                         doc.text('Disciplina', marginX, currentY);
                         doc.text('Professor', 90, currentY);
                         doc.text('Nota', 160, currentY);
                         doc.text('Frequencia', 180, currentY);
                         currentY += 4;
-                        doc.line(marginX, currentY, 200, currentY); 
+                        doc.setDrawColor(...config.accentColor);
+                        doc.setLineWidth(0.5);
+                        if (config.showColorBar) doc.setDrawColor(255, 255, 255);
+                        doc.line(marginX, currentY, 200, currentY);
                         currentY += 6;
 
                         doc.setFont('helvetica', 'normal');
-                        doc.setTextColor(30, 41, 59);
+                        doc.setTextColor(...config.secondaryColor);
 
                         student.subjects.forEach(sub => {
                             doc.text(safe(sub.name), marginX, currentY);
                             doc.text(safe(sub.teacher || '-'), 90, currentY);
-                            
+
                             const grade = typeof sub.grade === 'number' ? sub.grade : 0;
                             if (grade < 6) doc.setTextColor(220, 38, 38);
                             else doc.setTextColor(30, 41, 59);
@@ -187,21 +249,22 @@ export class ExportService {
                     if (latestReport && latestReport.observations) {
                         doc.setTextColor(71, 85, 105);
                         const dataFechamento = new Date(latestReport.date).toLocaleDateString('pt-BR');
-                        doc.text(`Ultima Analise (Fechamento: ${dataFechamento}):`, marginX, currentY);
+                        const analysisPrefix = config.showIcons ? '📝 ' : '';
+                        doc.text(`${analysisPrefix}Ultima Analise (Fechamento: ${dataFechamento}):`, marginX, currentY);
                         currentY += 6;
-                        
-                        doc.setTextColor(30, 41, 59);
+
+                        doc.setTextColor(...config.secondaryColor);
                         const obsText = safe(latestReport.observations);
                         const splitText = doc.splitTextToSize(obsText, 170);
-                        
+
                         if (currentY + (splitText.length * 5) > 280) {
                              doc.addPage();
                              currentY = 20;
                         }
-                        
+
                         doc.text(splitText, marginX, currentY);
                     } else {
-                        doc.setTextColor(148, 163, 184);
+                        doc.setTextColor(...config.accentColor);
                         doc.setFont('helvetica', 'italic');
                         doc.text('Nenhum relatorio ou parecer registrado para este aluno no periodo.', marginX, currentY);
                     }
@@ -209,9 +272,12 @@ export class ExportService {
                     // --- Rodapé ---
                     doc.setFontSize(9);
                     doc.setFont('helvetica', 'italic');
-                    doc.setTextColor(148, 163, 184);
+                    doc.setTextColor(...config.accentColor);
                     doc.text(`Documento gerado pelo Diario do Professor - ${new Date().toLocaleDateString('pt-BR')}`, marginX, 290);
-                    
+                    if (config.showIcons) {
+                        doc.text(`Modelo: ${template}`, 20, 295);
+                    }
+
                     console.log(`  ✅ Aluno ${student.name} processado com sucesso`);
                 } catch (studentError) {
                     console.error(`  ❌ Erro ao processar aluno ${student.name}:`, studentError);
@@ -220,10 +286,10 @@ export class ExportService {
 
             // Salvar
             const sanitizeName = (classGroup.name || 'turma').replace(/[^a-z0-9]/gi, '_').toLowerCase();
-            const fileName = `boletins-${sanitizeName}-${new Date().toISOString().split('T')[0]}.pdf`;
+            const fileName = `boletins-${sanitizeName}-${template}-${new Date().toISOString().split('T')[0]}.pdf`;
             console.log(`💾 Salvando PDF: ${fileName}`);
             doc.save(fileName);
-            
+
             console.log('✅ PDF exportado com sucesso!');
             return { success: true, message: `Boletins de "${classGroup.name}" gerados! (${classStudents.length} aluno(s))`, count: classStudents.length };
         } catch (error) {
@@ -279,6 +345,67 @@ export class ExportService {
         XLSX.utils.book_append_sheet(workbook, worksheet, 'Aulas Extras');
 
         XLSX.writeFile(workbook, `aulas-extras-${new Date().toISOString().split('T')[0]}.xlsx`);
+    }
+
+    /**
+     * Exporta backup completo de todos os dados em formato JSON
+     */
+    static exportToJSON(data: BackupPayload) {
+        const jsonString = JSON.stringify(data, null, 2);
+        const blob = new Blob([jsonString], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `backup-diario-professor-${new Date().toISOString().split('T')[0]}.json`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+    }
+
+    /**
+     * Importa dados de um arquivo JSON
+     */
+    static async importFromJSON(file: File): Promise<BackupPayload> {
+        if (!file.name.toLowerCase().endsWith('.json')) {
+            throw new Error('Selecione um arquivo JSON válido.');
+        }
+        if (file.size > 25 * 1024 * 1024) {
+            throw new Error('O backup excede o limite de 25 MB.');
+        }
+
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const json = JSON.parse(e.target?.result as string);
+                    if (!json || typeof json !== 'object') {
+                        throw new Error('Formato de arquivo inválido.');
+                    }
+                    if (json.app !== 'diario-do-professor') {
+                        throw new Error('Este arquivo não é um backup do Diário do Professor.');
+                    }
+                    if (json.schemaVersion !== 1) {
+                        throw new Error('Versão de backup incompatível.');
+                    }
+
+                    const collectionNames = [
+                        'classes', 'students', 'extraClasses', 'reports',
+                        'aiContents', 'notifications', 'communications'
+                    ];
+                    const invalidCollection = collectionNames.find(name => !Array.isArray(json[name]));
+                    if (invalidCollection) {
+                        throw new Error(`Backup incompleto: lista "${invalidCollection}" ausente.`);
+                    }
+
+                    resolve(json as BackupPayload);
+                } catch (err) {
+                    reject(err instanceof Error ? err : new Error('Formato de arquivo inválido.'));
+                }
+            };
+            reader.onerror = () => reject(new Error('Erro ao ler o arquivo.'));
+            reader.readAsText(file);
+        });
     }
 
     /**

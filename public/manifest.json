@@ -1,36 +1,47 @@
 {
-    "name": "diario-do-professor",
+    "name": "Diário do Professor",
     "short_name": "Diário Prof",
-    "description": "Sistema completo de gestão escolar para professores",
+    "description": "Sistema completo de gestão escolar para professores - controle de alunos, turmas, frequência e relatórios",
+    "id": "/",
     "start_url": "/",
+    "scope": "/",
     "display": "standalone",
+    "display_override": ["standalone", "minimal-ui"],
     "background_color": "#ffffff",
     "theme_color": "#4F46E5",
-    "orientation": "portrait-primary",
+    "orientation": "any",
     "icons": [
         {
             "src": "/icon.svg",
             "sizes": "any",
             "type": "image/svg+xml",
-            "purpose": "any maskable"
+            "purpose": "any"
+        },
+        {
+            "src": "/icon.svg",
+            "sizes": "any",
+            "type": "image/svg+xml",
+            "purpose": "maskable"
         }
     ],
     "categories": [
         "education",
         "productivity"
     ],
-    "screenshots": [
+    "shortcuts": [
         {
-            "src": "/screenshot-desktop.png",
-            "sizes": "1280x720",
-            "type": "image/png",
-            "form_factor": "wide"
+            "name": "Nova Chamada",
+            "short_name": "Chamada",
+            "description": "Abrir chamada rápida de alunos",
+            "url": "/#students",
+            "icons": [{ "src": "/icon.svg", "type": "image/svg+xml" }]
         },
         {
-            "src": "/screenshot-mobile.png",
-            "sizes": "750x1334",
-            "type": "image/png",
-            "form_factor": "narrow"
+            "name": "Relatórios",
+            "short_name": "Relatórios",
+            "description": "Ver relatórios e boletins",
+            "url": "/#reports",
+            "icons": [{ "src": "/icon.svg", "type": "image/svg+xml" }]
         }
     ]
 }

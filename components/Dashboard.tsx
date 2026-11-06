@@ -3,7 +3,6 @@ import { Users, Calendar, AlertCircle, TrendingUp, Filter, ListFilter, Sparkles,
 import { Student, ViewState, ClassGroup } from '../types';
 import { motion, type Variants } from 'framer-motion';
 import { generateMorningSummary } from '../services/geminiService';
-import { ExportService } from '../services/exportService';
 import { useToast } from '../hooks/useToast';
 
 interface DashboardProps {
@@ -13,6 +12,8 @@ interface DashboardProps {
   students: Student[];
   classes: ClassGroup[];
   onNavigate: (view: ViewState) => void;
+  onExportBackup: () => void;
+  onImportBackup: (file: File) => Promise<string>;
 }
 
 // Cores do Gráfico
@@ -28,7 +29,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
   extraClassesToday,
   students,
   classes,
-  onNavigate
+  onNavigate,
+  onExportBackup,
+  onImportBackup
 }) => {
   const { showToast } = useToast();
   const [selectedClassId, setSelectedClassId] = useState<string>('all');
@@ -270,15 +273,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </div>
           <div className="flex gap-2">
             <button
-              onClick={() => {
-                const data = {
-                  students,
-                  classes,
-                  exportedAt: new Date().toISOString(),
-                };
-                ExportService.exportToJSON(data);
-                showToast('Backup exportado com sucesso!', 'success');
-              }}
+              onClick={onExportBackup}
               disabled={students.length === 0}
               className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 disabled:bg-gray-300 disabled:text-gray-500 transition-colors font-medium"
             >
@@ -296,11 +291,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   const file = e.target.files?.[0];
                   if (!file) return;
                   try {
-                    const importedData = await ExportService.importFromJSON(file);
-                    showToast(`Backup importado! Encontrados ${importedData.students?.length || 0} alunos e ${importedData.classes?.length || 0} turmas.`, 'success');
+                    const message = await onImportBackup(file);
+                    showToast(message, 'success');
                   } catch (error) {
-                    showToast('Erro ao importar backup: Arquivo inválido.', 'error');
+                    const message = error instanceof Error ? error.message : 'Erro ao restaurar o backup.';
+                    showToast(message, 'error');
                   }
+                  e.target.value = '';
                 }}
               />
             </label>

@@ -288,12 +288,12 @@ export const generateCommunication = async (
 
   const prompt = `
     Atue como um(a) professor(a) experiente e empático(a) que precisa enviar um comunicado aos pais/responsáveis.
-    
+
     TIPO DE COMUNICADO: ${categoryContext}
     TURMA: ${className}
     PROFESSOR(A): ${teacherName}
     ${customContext ? `CONTEXTO ADICIONAL DO PROFESSOR: ${customContext}` : ''}
-    
+
     REGRAS IMPORTANTES:
     - Escreva em texto corrido, como uma mensagem formal porém acessível para WhatsApp.
     - NÃO use Markdown, cabeçalhos ou formatação complexa. Apenas texto simples com quebras de linha.
@@ -303,6 +303,61 @@ export const generateCommunication = async (
     - Use emojis de forma moderada e profissional (máximo 3-4 no texto inteiro).
     - O texto deve ter entre 100 e 250 palavras.
     - Se for reunião ou evento, deixe espaços para [DATA], [HORÁRIO], [LOCAL] que o professor preencherá.
+  `;
+  return handleAiRequest(prompt);
+};
+
+/**
+ * Gera dicas práticas de intervenção pedagógica para um aluno específico
+ */
+export const generateInterventionTips = async (
+  studentName: string,
+  scenario: 'EXCELLENT' | 'CRITICAL' | 'IMPROVING' | 'DECLINING',
+  metrics: { averageGrade: number, attendance: number, subjectsSummary: string }
+): Promise<string> => {
+  const prompt = `
+    Atue como um coordenador pedagógico experiente e especialista em educação.
+
+    Crie 3 dicas práticas de intervenção pedagógica para o aluno: ${studentName} (Cenário: ${scenario}).
+    Métricas: Média: ${metrics.averageGrade.toFixed(1)} | Frequência: ${metrics.attendance}% | Disciplinas: ${metrics.subjectsSummary}
+
+    Use a estrutura em Markdown:
+
+    ## 🎯 Dicas Práticas de Intervenção
+    1. **Atividade:** [Nome simples]
+    * **Como aplicar:** [Passo a passo curto]
+    * **Material:** [Itens necessários, se houver]
+    * **Objetivo:** [O que se espera alcançar]
+
+    2. **Atividade:** [Outra atividade]
+    * **Como aplicar:** [Passo a passo curto]
+    * **Objetivo:** ...
+
+    3. **Manejo em Sala:** [Dica comportamental/social]
+    Seja prático, acolhedor e eficiente.
+  `;
+  return handleAiRequest(prompt);
+};
+
+/**
+ * Gera um resumo matinal acolhedor para o professor
+ */
+export const generateMorningSummary = async (
+  totalStudents: number,
+  totalClasses: number,
+  lowAttendanceCount: number,
+  lowGradesCount: number
+): Promise<string> => {
+  const prompt = `
+    Atue como um assistente pedagógico acolhedor e motivador para um professor.
+    Gere um resumo matinal curto e inspirador (máximo 3-4 linhas) com base nos dados da escola:
+
+    - Total de Alunos: ${totalStudents}
+    - Total de Turmas: ${totalClasses}
+    - Alunos com Frequência Crítica (<75%): ${lowAttendanceCount}
+    - Alunos com Notas Baixas (<6.0): ${lowGradesCount}
+
+    Seja positivo, encorajador e pontue o que precisa de foco hoje sem ser alarmista. Sem Markdown, apenas texto corrido e emojis moderados.
   `;
   return handleAiRequest(prompt);
 };
