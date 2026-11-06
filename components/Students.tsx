@@ -306,6 +306,7 @@ export const Students: React.FC<StudentsProps> = ({ students, classGroups, onAdd
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!isAttendanceMode || !currentSwipeStudent) return;
+      if (e.repeat) return;
 
       if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') {
         e.preventDefault();
@@ -316,6 +317,9 @@ export const Students: React.FC<StudentsProps> = ({ students, classGroups, onAdd
       } else if (e.key === 'Enter') {
         e.preventDefault();
         handleSwipe({ offset: { x: 200 }, velocity: 600 }, currentSwipeStudent);
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        setIsAttendanceMode(false);
       }
     };
 
@@ -631,6 +635,9 @@ export const Students: React.FC<StudentsProps> = ({ students, classGroups, onAdd
             <div className="text-center absolute top-20 left-0 right-0 pointer-events-none">
                 <h2 className="text-white text-2xl font-bold mb-2">Chamada Rápida</h2>
                 <p className="text-gray-300">[{currentSwipeIndex + 1} de {swipeQueue.length}] Arraste para a Direita (Presente) ou Esquerda (Faltou)</p>
+                <p className="text-gray-400 text-xs mt-1">
+                    ← Faltou &nbsp; • &nbsp; → ou Enter: Presente &nbsp; • &nbsp; Esc: Sair
+                </p>
             </div>
 
             <div className="relative w-full max-w-sm h-96 flex items-center justify-center">
@@ -676,12 +683,14 @@ export const Students: React.FC<StudentsProps> = ({ students, classGroups, onAdd
                 <button 
                     onClick={() => { controls.start({ x: -500, opacity: 0, transition: { duration: 0.3 } }).then(() => nextSwipe()); }}
                     className="w-16 h-16 rounded-full bg-white shadow-lg flex items-center justify-center text-red-500 hover:bg-red-50 hover:scale-110 transition-all border-2 border-red-100"
+                    title="Faltou (seta para a esquerda)"
                 >
                     <XCircle size={32} />
                 </button>
                 <button 
                     onClick={() => { controls.start({ x: 500, opacity: 0, transition: { duration: 0.3 } }).then(() => nextSwipe()); }}
                     className="w-16 h-16 rounded-full bg-white shadow-lg flex items-center justify-center text-emerald-500 hover:bg-emerald-50 hover:scale-110 transition-all border-2 border-emerald-100"
+                    title="Presente (seta para a direita ou Enter)"
                 >
                     <CheckCircle2 size={32} />
                 </button>

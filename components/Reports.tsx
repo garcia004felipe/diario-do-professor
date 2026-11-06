@@ -48,6 +48,29 @@ export const Reports: React.FC<ReportsProps> = ({ reports, students, extraClasse
     };
   }, [isModalOpen]);
 
+  useEffect(() => {
+    if (!isModalOpen) return;
+
+    const handleModalShortcut = (event: KeyboardEvent) => {
+      if (event.repeat) return;
+
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setIsModalOpen(false);
+        return;
+      }
+
+      if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+        event.preventDefault();
+        const form = document.querySelector<HTMLFormElement>('form.report-form');
+        form?.requestSubmit();
+      }
+    };
+
+    window.addEventListener('keydown', handleModalShortcut);
+    return () => window.removeEventListener('keydown', handleModalShortcut);
+  }, [isModalOpen]);
+
   // Effect to auto-fill data when student changes (ONLY when creating new, not editing)
   useEffect(() => {
     if (selectedStudentId && !editingId) {
@@ -273,7 +296,10 @@ export const Reports: React.FC<ReportsProps> = ({ reports, students, extraClasse
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black bg-opacity-50 backdrop-blur-sm sm:p-4">
           <div className="bg-white w-full h-[85dvh] sm:h-auto sm:max-h-[90dvh] rounded-t-2xl sm:rounded-xl shadow-xl animate-in fade-in slide-in-from-bottom-8 sm:zoom-in duration-200 flex flex-col">
             <div className="flex justify-between items-center p-4 sm:p-6 border-b border-gray-100 shrink-0">
-              <h3 className="text-lg font-bold text-gray-900">{editingId ? 'Editar Relatório' : 'Gerar Novo Relatório'}</h3>
+              <div>
+                <h3 className="text-lg font-bold text-gray-900">{editingId ? 'Editar Relatório' : 'Gerar Novo Relatório'}</h3>
+                <p className="text-xs text-gray-400 mt-1">Ctrl+Enter para salvar • Esc para fechar</p>
+              </div>
               <button onClick={() => setIsModalOpen(false)} className="text-gray-400 hover:text-gray-600 p-2 rounded-full hover:bg-gray-100">
                 <X size={24} />
               </button>
@@ -281,7 +307,7 @@ export const Reports: React.FC<ReportsProps> = ({ reports, students, extraClasse
 
             {/* FIX: min-h-0 */}
             <div className="overflow-y-auto p-4 sm:p-6 flex-1 min-h-0 overscroll-contain">
-              <form onSubmit={handleSubmit} className="space-y-6 pb-4">
+              <form onSubmit={handleSubmit} className="report-form space-y-6 pb-4">
 
                 {/* Seleção do Aluno */}
                 <div>
@@ -412,6 +438,7 @@ export const Reports: React.FC<ReportsProps> = ({ reports, students, extraClasse
                     type="submit"
                     disabled={!selectedStudentId}
                     className="flex-1 px-4 py-3 sm:py-2 text-sm font-medium text-white bg-brand-600 hover:bg-brand-700 rounded-xl shadow-sm transition-colors disabled:opacity-50"
+                    title="Salvar (Ctrl+Enter)"
                   >
                     {editingId ? 'Salvar' : 'Gerar Relatório'}
                   </button>
