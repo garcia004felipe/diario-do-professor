@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Users, Calendar, AlertCircle, TrendingUp, Filter, ListFilter, Sparkles, Download, Upload } from 'lucide-react';
+import { Users, Calendar, AlertCircle, TrendingUp, Filter, ListFilter, Sparkles } from 'lucide-react';
 import { Student, ViewState, ClassGroup } from '../types';
 import { motion, type Variants } from 'framer-motion';
 import { generateMorningSummary } from '../services/geminiService';
@@ -12,8 +12,6 @@ interface DashboardProps {
   students: Student[];
   classes: ClassGroup[];
   onNavigate: (view: ViewState) => void;
-  onExportBackup: () => void;
-  onImportBackup: (file: File) => Promise<string>;
 }
 
 // Cores do Gráfico
@@ -29,9 +27,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   extraClassesToday,
   students,
   classes,
-  onNavigate,
-  onExportBackup,
-  onImportBackup
+  onNavigate
 }) => {
   const { showToast } = useToast();
   const [selectedClassId, setSelectedClassId] = useState<string>('all');
@@ -258,51 +254,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </div>
         </div>
 
-        {/* Card Backup/Restore */}
-        <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-slate-700 flex flex-col gap-4 group">
-          <div className="flex items-start gap-3">
-            <div className="p-3 bg-brand-50 dark:bg-brand-900/30 text-brand-600 dark:text-brand-400 rounded-lg">
-              <Download size={20} />
-            </div>
-            <div className="flex-1">
-              <p className="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Backup & Restore</p>
-              <p className="text-sm text-gray-800 dark:text-gray-200 leading-relaxed mb-3">
-                Exporte ou importe todos os dados do diário em formato JSON.
-              </p>
-            </div>
-          </div>
-          <div className="flex gap-2">
-            <button
-              onClick={onExportBackup}
-              disabled={students.length === 0}
-              className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 disabled:bg-gray-300 disabled:text-gray-500 transition-colors font-medium"
-            >
-              <Download size={16} />
-              <span>Exportar Backup</span>
-            </button>
-            <label className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors font-medium cursor-pointer">
-              <Upload size={16} />
-              <span>Importar Backup</span>
-              <input
-                type="file"
-                accept=".json"
-                className="hidden"
-                onChange={async (e) => {
-                  const file = e.target.files?.[0];
-                  if (!file) return;
-                  try {
-                    const message = await onImportBackup(file);
-                    showToast(message, 'success');
-                  } catch (error) {
-                    const message = error instanceof Error ? error.message : 'Erro ao restaurar o backup.';
-                    showToast(message, 'error');
-                  }
-                  e.target.value = '';
-                }}
-              />
-            </label>
-          </div>
-        </div>
       </motion.div>
 
       {/* Gráficos Recharts */}

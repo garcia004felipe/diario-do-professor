@@ -8,6 +8,7 @@ export enum ViewState {
   REPORTS = 'REPORTS',
   AI_PLANNER = 'AI_PLANNER',
   COMMUNICATIONS = 'COMMUNICATIONS',
+  BACKUP = 'BACKUP',
   DB_TEST = 'DB_TEST'
 }
 

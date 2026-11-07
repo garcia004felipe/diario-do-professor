@@ -18,6 +18,7 @@ import { GlobalSearch } from './components/GlobalSearch';
 import { ForgotPassword } from './components/ForgotPassword';
 import { DatabaseTest } from './components/DatabaseTest';
 import { Communications } from './components/Communications';
+import { BackupRestore } from './components/BackupRestore';
 import { ViewState, Student, ExtraClass, ActivityType, ClassGroup, Report, NotificationItem, UserProfile, AiGeneratedContent, Communication } from './types';
 import { generateStudentPerformanceReport, hasApiKey } from './services/geminiService';
 import * as db from './services/database';
@@ -1055,8 +1056,6 @@ export default function App() {
             students={students}
             classes={classes}
             onNavigate={setCurrentView}
-            onExportBackup={handleExportBackup}
-            onImportBackup={handleImportBackup}
           />
         );
       case ViewState.STUDENTS:
@@ -1130,6 +1129,13 @@ export default function App() {
             onDelete={handleDeleteCommunication}
           />
         );
+      case ViewState.BACKUP:
+        return (
+          <BackupRestore
+            onExport={handleExportBackup}
+            onImport={handleImportBackup}
+          />
+        );
       default:
         return null;
     }
@@ -1163,6 +1169,7 @@ export default function App() {
     { id: ViewState.AI_PLANNER, label: 'Central IA', icon: Sparkles },
     { id: ViewState.REPORTS, label: 'Relatórios', icon: FileText },
     { id: ViewState.COMMUNICATIONS, label: 'Comunicados', icon: MessageSquareText },
+    { id: ViewState.BACKUP, label: 'Backup & Restore', icon: Download },
   ];
 
   const unreadCount = notifications.filter(n => !n.read).length;
