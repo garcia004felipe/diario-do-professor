@@ -1,6 +1,6 @@
-const CACHE_NAME = 'diario-professor-v3';
-const STATIC_CACHE = 'static-v3';
-const DYNAMIC_CACHE = 'dynamic-v3';
+const CACHE_NAME = 'diario-professor-v4';
+const STATIC_CACHE = 'static-v4';
+const DYNAMIC_CACHE = 'dynamic-v4';
 
 // Arquivos essenciais para cache
 const STATIC_ASSETS = [
@@ -88,3 +88,9 @@ self.addEventListener('sync', (event) => {
 async function syncData() {
     console.log('[SW] Syncing offline data...');
 }
+
+self.addEventListener('message', (event) => {
+    if (event.data && event.data.type === 'SKIP_WAITING') {
+        self.skipWaiting();
+    }
+});

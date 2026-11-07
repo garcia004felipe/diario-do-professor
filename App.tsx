@@ -46,6 +46,11 @@ const INITIAL_EXTRA_CLASSES: ExtraClass[] = [];
 
 const INITIAL_REPORTS: Report[] = [];
 
+interface BeforeInstallPromptEvent extends Event {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>;
+}
+
 // Função para carregar apenas sessão do usuário do localStorage
 const loadUserSession = (): UserProfile | null => {
   if (typeof window === 'undefined') return null;
@@ -89,6 +94,7 @@ export default function App() {
   // Estados de Rede e Sincronização
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
 
   // Estados inicializados vazios - dados virão do Supabase
   const [students, setStudents] = useState<Student[]>([]);
@@ -145,6 +151,63 @@ export default function App() {
       window.removeEventListener('offline-sync-finished', handleSyncFinish);
     };
   }, [currentUser, userId]);
+
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (event: Event) => {
+      event.preventDefault();
+      setInstallPrompt(event as BeforeInstallPromptEvent);
+    };
+
+    const handleAppInstalled = () => {
+      setInstallPrompt(null);
+      showToast('Aplicativo instalado com sucesso!', 'success');
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    window.addEventListener('appinstalled', handleAppInstalled);
+
+    let refreshing = false;
+    const handleControllerChange = () => {
+      if (refreshing) return;
+      refreshing = true;
+      window.location.reload();
+    };
+    navigator.serviceWorker?.addEventListener('controllerchange', handleControllerChange);
+
+    if ('serviceWorker' in navigator && import.meta.env.PROD) {
+      navigator.serviceWorker.register('/service-worker.js')
+        .then((registration) => {
+          registration.addEventListener('updatefound', () => {
+            const newWorker = registration.installing;
+            if (!newWorker) return;
+            newWorker.addEventListener('statechange', () => {
+              if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                newWorker.postMessage({ type: 'SKIP_WAITING' });
+              }
+            });
+          });
+        })
+        .catch((error) => {
+          console.error('Falha ao registrar Service Worker:', error);
+        });
+    }
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+      window.removeEventListener('appinstalled', handleAppInstalled);
+      navigator.serviceWorker?.removeEventListener('controllerchange', handleControllerChange);
+    };
+  }, [showToast]);
+
+  const handleInstallApp = async () => {
+    if (!installPrompt) return;
+    await installPrompt.prompt();
+    const choice = await installPrompt.userChoice;
+    if (choice.outcome === 'accepted') {
+      showToast('Instalação iniciada', 'success');
+    }
+    setInstallPrompt(null);
+  };
 
   const loadUserData = async (email: string, authId: string) => {
     console.log('✅ Iniciando carregamento de dados do Supabase para:', email, 'AuthID:', authId);
@@ -1377,6 +1440,16 @@ export default function App() {
                  <Cloud size={16} className="text-blue-500 animate-pulse" />
                  <span className="text-xs font-semibold text-blue-700">Sincronizando...</span>
               </div>
+            )}
+            {installPrompt && (
+              <button
+                onClick={handleInstallApp}
+                className="hidden sm:flex items-center gap-2 px-3 py-2 text-xs font-bold text-brand-600 dark:text-brand-400 bg-white dark:bg-slate-800 border border-brand-100 dark:border-brand-900/30 hover:bg-brand-50 dark:hover:bg-brand-900/50 rounded-xl transition-all shadow-sm"
+                title="Instalar aplicativo na tela inicial"
+              >
+                <Smartphone size={14} />
+                Instalar app
+              </button>
             )}
 
             <div className="relative">
