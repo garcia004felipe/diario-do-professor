@@ -120,14 +120,19 @@ export class ExportService {
             // Helper defensivo: nunca passar undefined/null para doc.text()
             const safe = (val: unknown): string => {
                 if (val === null || val === undefined) return '-';
-                return String(val);
+                return String(val)
+                    .replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, '')
+                    .replace(/[•●]/g, '-')
+                    .replace(/[^\u0000-\u00FF]/g, '')
+                    .replace(/\s+/g, ' ')
+                    .trim();
             };
 
             // Configurações de templates
             const templates: Record<string, { primaryColor: [number, number, number]; secondaryColor: [number, number, number]; accentColor: [number, number, number]; showColorBar: boolean; showIcons: boolean }> = {
                 classico: { primaryColor: [79, 70, 229], secondaryColor: [30, 41, 59], accentColor: [148, 163, 184], showColorBar: true, showIcons: false },
-                moderno: { primaryColor: [16, 185, 129], secondaryColor: [15, 23, 42], accentColor: [52, 211, 153], showColorBar: true, showIcons: true },
-                colorido: { primaryColor: [234, 179, 8], secondaryColor: [120, 53, 15], accentColor: [249, 115, 22], showColorBar: true, showIcons: true },
+                moderno: { primaryColor: [16, 185, 129], secondaryColor: [15, 23, 42], accentColor: [52, 211, 153], showColorBar: true, showIcons: false },
+                colorido: { primaryColor: [234, 179, 8], secondaryColor: [120, 53, 15], accentColor: [249, 115, 22], showColorBar: true, showIcons: false },
                 minimalista: { primaryColor: [71, 85, 105], secondaryColor: [30, 41, 59], accentColor: [203, 213, 225], showColorBar: false, showIcons: false },
             };
             const config = templates[template];
@@ -165,12 +170,11 @@ export class ExportService {
                     }
                     doc.setFontSize(22);
                     doc.setFont('helvetica', 'bold');
-                    const titlePrefix = config.showIcons ? '📋 ' : '';
-                    doc.text(`${titlePrefix}Boletim de Desempenho`, marginX, 22);
+                    doc.text('Boletim de Desempenho', marginX, 22);
 
                     doc.setFontSize(12);
                     doc.setFont('helvetica', 'normal');
-                    doc.text(`${safe(classGroup.name)} • ${safe(classGroup.grade)}`, marginX, 32);
+                    doc.text(`${safe(classGroup.name)} - ${safe(classGroup.grade)}`, marginX, 32);
 
                     // --- Dados do Aluno ---
                     currentY = 55;
@@ -178,30 +182,25 @@ export class ExportService {
 
                     doc.setFontSize(16);
                     doc.setFont('helvetica', 'bold');
-                    const namePrefix = config.showIcons ? '👤 ' : '';
-                    doc.text(`${namePrefix}Aluno(a): ${safe(student.name)}`, marginX, currentY);
+                    doc.text(`Aluno(a): ${safe(student.name)}`, marginX, currentY);
                     currentY += 10;
 
                     doc.setFontSize(11);
                     doc.setFont('helvetica', 'normal');
-                    const agePrefix = config.showIcons ? '🎂 ' : '';
-                    const freqPrefix = config.showIcons ? '📊 ' : '';
-                    doc.text(`${agePrefix}Idade: ${safe(student.age)} anos`, marginX, currentY);
-                    doc.text(`${freqPrefix}Frequencia Global: ${safe(student.attendanceRate)}%`, 100, currentY);
+                    doc.text(`Idade: ${safe(student.age)} anos`, marginX, currentY);
+                    doc.text(`Frequência Global: ${safe(student.attendanceRate)}%`, 100, currentY);
                     currentY += 8;
 
-                    const teacherPrefix = config.showIcons ? '👩‍🏫 ' : '';
-                    doc.text(`${teacherPrefix}Professor Responsavel: ${safe(classGroup.teacherName || 'Nao informado')}`, marginX, currentY);
+                    doc.text(`Professor Responsável: ${safe(classGroup.teacherName || 'Não informado')}`, marginX, currentY);
                     currentY += 8;
 
-                    doc.text(`Observacoes Medicas: ${safe(student.needs || 'Nenhuma restricao registrada')}`, marginX, currentY);
+                    doc.text(`Observações Médicas: ${safe(student.needs || 'Nenhuma restrição registrada')}`, marginX, currentY);
                     currentY += 15;
 
                     // --- Tabela de Notas ---
                     doc.setFontSize(14);
                     doc.setFont('helvetica', 'bold');
-                    const subjectTitle = config.showIcons ? '📚 ' : '';
-                    doc.text(`${subjectTitle}Desempenho por Disciplina`, marginX, currentY);
+                    doc.text('Desempenho por Disciplina', marginX, currentY);
                     currentY += 10;
 
                     if (student.subjects && student.subjects.length > 0) {
@@ -211,7 +210,7 @@ export class ExportService {
                         doc.text('Disciplina', marginX, currentY);
                         doc.text('Professor', 90, currentY);
                         doc.text('Nota', 160, currentY);
-                        doc.text('Frequencia', 180, currentY);
+                        doc.text('Frequência', 180, currentY);
                         currentY += 4;
                         doc.setDrawColor(...config.accentColor);
                         doc.setLineWidth(0.5);
@@ -249,7 +248,7 @@ export class ExportService {
                     doc.setFontSize(14);
                     doc.setFont('helvetica', 'bold');
                     doc.setTextColor(30, 41, 59);
-                    doc.text('Parecer Pedagogico', marginX, currentY);
+                    doc.text('Parecer Pedagógico', marginX, currentY);
                     currentY += 8;
 
                     doc.setFontSize(10);
@@ -258,8 +257,7 @@ export class ExportService {
                     if (latestReport && latestReport.observations) {
                         doc.setTextColor(71, 85, 105);
                         const dataFechamento = new Date(latestReport.date).toLocaleDateString('pt-BR');
-                        const analysisPrefix = config.showIcons ? '📝 ' : '';
-                        doc.text(`${analysisPrefix}Ultima Analise (Fechamento: ${dataFechamento}):`, marginX, currentY);
+                        doc.text(`Última Análise (Fechamento: ${dataFechamento}):`, marginX, currentY);
                         currentY += 6;
 
                         doc.setTextColor(...config.secondaryColor);
