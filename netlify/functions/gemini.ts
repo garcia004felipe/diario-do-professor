@@ -42,7 +42,7 @@ const generateWithFallback = async <T>(
   fallbackModel: string
 ): Promise<T> => {
   let lastError: unknown;
-  const models = [...new Set([primaryModel, fallbackModel, "gemini-2.5-flash", "gemini-1.5-flash"].filter(Boolean))];
+  const models = [...new Set([primaryModel, fallbackModel, "gemini-2.5-flash"].filter(Boolean))];
 
   for (const selectedModel of models) {
     try {
@@ -122,8 +122,11 @@ export default async (req: Request) => {
     }
 
     const rawModel = model || process.env.GEMINI_MODEL || "gemini-2.5-flash";
-    const primaryModel = rawModel.includes("3.8") ? "gemini-2.5-flash" : rawModel;
-    const fallbackModel = process.env.GEMINI_FALLBACK_MODEL || "gemini-1.5-flash";
+    const primaryModel =
+      rawModel.includes("3.8") || rawModel.includes("1.5")
+        ? "gemini-2.5-flash"
+        : rawModel;
+    const fallbackModel = process.env.GEMINI_FALLBACK_MODEL || "gemini-2.5-flash";
 
     const ai = new GoogleGenAI({ apiKey });
     const response = await generateWithFallback<any>(ai, prompt, primaryModel, fallbackModel);

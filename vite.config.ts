@@ -42,8 +42,16 @@ export default defineConfig(({ mode }) => {
               try {
                 const { prompt, model } = JSON.parse(body || '{}');
                 const apiKey = env.GEMINI_API_KEY || process.env.GEMINI_API_KEY;
-                const primaryModel = model || env.GEMINI_MODEL || process.env.GEMINI_MODEL || 'gemini-3.8-flash';
-                const fallbackModel = env.GEMINI_FALLBACK_MODEL || process.env.GEMINI_FALLBACK_MODEL || 'gemini-1.5-flash';
+                const configuredModel = model || env.GEMINI_MODEL || process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+                const primaryModel =
+                  configuredModel.includes('3.8') || configuredModel.includes('1.5')
+                    ? 'gemini-2.5-flash'
+                    : configuredModel;
+                const configuredFallback = env.GEMINI_FALLBACK_MODEL || process.env.GEMINI_FALLBACK_MODEL || 'gemini-2.5-flash';
+                const fallbackModel =
+                  configuredFallback.includes('3.8') || configuredFallback.includes('1.5')
+                    ? 'gemini-2.5-flash'
+                    : configuredFallback;
 
                 if (!apiKey) {
                   res.statusCode = 500;

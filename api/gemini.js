@@ -25,6 +25,16 @@ const withGeminiRetry = async (fn, retries = 2) => {
     } catch (error) {
       lastError = error;
       const message = error?.message || '';
+      const lowerMessage = message.toLowerCase();
+
+      if (
+        lowerMessage.includes('429') ||
+        lowerMessage.includes('quota') ||
+        lowerMessage.includes('resource_exhausted') ||
+        lowerMessage.includes('rate limit')
+      ) {
+        throw error;
+      }
 
       if (!isTransientGeminiError(message) || attempt === retries) {
         throw error;
@@ -115,8 +125,17 @@ export default async function handler(req, res) {
           return;
         }
 
-        const primaryModel = model || process.env.GEMINI_MODEL || 'gemini-3.8-flash';
-        const fallbackModel = process.env.GEMINI_FALLBACK_MODEL || 'gemini-1.5-flash';
+        const configuredModel = model || process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+        const primaryModel =
+          configuredModel.includes('3.8') || configuredModel.includes('1.5')
+            ? 'gemini-2.5-flash'
+            : configuredModel;
+        const configuredFallback =
+          process.env.GEMINI_FALLBACK_MODEL || 'gemini-2.5-flash';
+        const fallbackModel =
+          configuredFallback.includes('3.8') || configuredFallback.includes('1.5')
+            ? 'gemini-2.5-flash'
+            : configuredFallback;
 
         const ai = new GoogleGenAI({ apiKey });
         const response = await generateWithFallback(ai, prompt, primaryModel, fallbackModel);
