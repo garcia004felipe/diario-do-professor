@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { ClassGroup, Student, UserProfile } from '../types';
-import { Plus, Trash2, Edit2, Users, Sun, Moon, Clock, X, UserPlus, User, Download } from 'lucide-react';
+import { Plus, Trash2, Edit2, Users, Sun, Moon, Clock, X, UserPlus, User, Download, Palette } from 'lucide-react';
 import { ConfirmDialog } from './ConfirmDialog';
 
 interface ClassesProps {
@@ -9,7 +9,7 @@ interface ClassesProps {
   onEdit: (updatedClass: ClassGroup) => void;
   onDelete: (id: string) => void;
   onAddStudent: (student: Omit<Student, 'id' | 'status' | 'attendanceRate' | 'photoUrl'> & { photoUrl?: string }) => void;
-  onExportClass?: (classId: string) => void;
+  onExportClass?: (classId: string, template: 'classico' | 'moderno' | 'colorido' | 'minimalista') => void;
   currentUser?: UserProfile | null;
 }
 
@@ -18,6 +18,8 @@ export const Classes: React.FC<ClassesProps> = ({ classes, onAdd, onEdit, onDele
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [addStudentClassId, setAddStudentClassId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [exportClassId, setExportClassId] = useState<string | null>(null);
+  const [exportTemplate, setExportTemplate] = useState<'classico' | 'moderno' | 'colorido' | 'minimalista'>('classico');
   
   // Class Form State
   const [name, setName] = useState('');
@@ -46,7 +48,7 @@ export const Classes: React.FC<ClassesProps> = ({ classes, onAdd, onEdit, onDele
 
   // Lock body scroll
   useEffect(() => {
-    if (isModalOpen || addStudentClassId) {
+    if (isModalOpen || addStudentClassId || exportClassId) {
       document.body.classList.add('scroll-locked');
     } else {
       document.body.classList.remove('scroll-locked');
@@ -54,7 +56,7 @@ export const Classes: React.FC<ClassesProps> = ({ classes, onAdd, onEdit, onDele
     return () => {
       document.body.classList.remove('scroll-locked');
     };
-  }, [isModalOpen, addStudentClassId]);
+  }, [isModalOpen, addStudentClassId, exportClassId]);
 
   const openNewModal = () => {
     setEditingId(null);
@@ -160,7 +162,7 @@ export const Classes: React.FC<ClassesProps> = ({ classes, onAdd, onEdit, onDele
               </div>
               <div className="flex gap-1">
                  <button 
-                  onClick={() => onExportClass && onExportClass(cls.id)}
+                  onClick={() => setExportClassId(cls.id)}
                   className="p-2 text-gray-400 hover:text-brand-600 hover:bg-gray-50 rounded-md flex items-center gap-1"
                   title="Exportar Boletins"
                 >
@@ -456,6 +458,76 @@ export const Classes: React.FC<ClassesProps> = ({ classes, onAdd, onEdit, onDele
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de modelo do boletim */}
+      {exportClassId && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm sm:p-4">
+          <div className="bg-white w-full sm:max-w-2xl rounded-t-2xl sm:rounded-xl shadow-xl p-5 sm:p-6 animate-in fade-in slide-in-from-bottom-8 sm:zoom-in duration-200">
+            <div className="flex items-start justify-between mb-5">
+              <div>
+                <div className="flex items-center gap-2">
+                  <Palette size={20} className="text-brand-600" />
+                  <h3 className="text-lg font-bold text-gray-900">Escolher modelo do boletim</h3>
+                </div>
+                <p className="text-sm text-gray-500 mt-1">
+                  Turma: {classes.find(c => c.id === exportClassId)?.name}
+                </p>
+              </div>
+              <button onClick={() => setExportClassId(null)} className="text-gray-400 hover:text-gray-600 p-1">
+                <X size={22} />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              {[
+                { id: 'classico', name: 'Clássico', color: '#4F46E5', bg: '#EEF2FF' },
+                { id: 'moderno', name: 'Moderno', color: '#10B981', bg: '#ECFDF5' },
+                { id: 'colorido', name: 'Colorido', color: '#EAB308', bg: '#FEFCE8' },
+                { id: 'minimalista', name: 'Minimalista', color: '#475569', bg: '#F8FAFC' }
+              ].map((template) => (
+                <button
+                  key={template.id}
+                  type="button"
+                  onClick={() => setExportTemplate(template.id as typeof exportTemplate)}
+                  className={`rounded-xl border-2 p-3 text-left transition-all ${
+                    exportTemplate === template.id ? 'border-brand-500 ring-2 ring-brand-100 bg-brand-50/40' : 'border-gray-200 hover:border-gray-300'
+                  }`}
+                >
+                  <div className="h-16 rounded-lg border border-black/5 mb-2 p-2" style={{ background: template.bg }}>
+                    <div className="h-2 rounded-full mb-2" style={{ background: template.color }} />
+                    <div className="grid grid-cols-3 gap-1">
+                      <div className="h-8 rounded bg-white border border-gray-200" />
+                      <div className="h-8 rounded bg-white border border-gray-200 col-span-2" />
+                    </div>
+                  </div>
+                  <span className="text-sm font-bold text-gray-700">{template.name}</span>
+                </button>
+              ))}
+            </div>
+
+            <div className="flex gap-3 mt-5 pt-4 border-t border-gray-100">
+              <button
+                type="button"
+                onClick={() => setExportClassId(null)}
+                className="flex-1 px-4 py-3 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (exportClassId && onExportClass) onExportClass(exportClassId, exportTemplate);
+                  setExportClassId(null);
+                }}
+                disabled={!onExportClass}
+                className="flex-1 px-4 py-3 text-sm font-bold text-white bg-brand-600 hover:bg-brand-700 rounded-lg disabled:opacity-50"
+              >
+                Gerar boletins PDF
+              </button>
             </div>
           </div>
         </div>

@@ -20,6 +20,9 @@ export const ReportPdfViewer: React.FC<ReportPdfViewerProps> = ({
 }) => {
   const [isDownloading, setIsDownloading] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [template, setTemplate] = useState<'classico' | 'moderno' | 'colorido' | 'minimalista'>(() =>
+    (localStorage.getItem('report-pdf-template') as 'classico' | 'moderno' | 'colorido' | 'minimalista') || 'classico'
+  );
 
   useEffect(() => {
     setMounted(true);
@@ -56,7 +59,7 @@ export const ReportPdfViewer: React.FC<ReportPdfViewerProps> = ({
       }
 
       const sanitizedName = student.name.replace(/[^a-z0-9]/gi, '_').toLowerCase();
-      const filename = `relatorio_${sanitizedName}_${report.date}.pdf`;
+      const filename = `relatorio_${sanitizedName}_${template}_${report.date}.pdf`;
 
       // CONFIGURAÇÃO DEFINITIVA PARA A4
       const opt = {
@@ -92,6 +95,14 @@ export const ReportPdfViewer: React.FC<ReportPdfViewerProps> = ({
 
   if (!student || !mounted) return null;
 
+  const templateStyles = {
+    classico: { stripe: '#4338CA', accent: '#EEF2FF', title: 'text-indigo-900', border: 'border-indigo-100' },
+    moderno: { stripe: '#059669', accent: '#ECFDF5', title: 'text-emerald-900', border: 'border-emerald-100' },
+    colorido: { stripe: '#CA8A04', accent: '#FEFCE8', title: 'text-yellow-900', border: 'border-yellow-100' },
+    minimalista: { stripe: '#64748B', accent: '#F8FAFC', title: 'text-slate-800', border: 'border-slate-200' }
+  };
+  const currentTemplate = templateStyles[template];
+
   const content = (
     // Z-index altíssimo para garantir sobreposição total
     <div className="fixed inset-0 z-[9999] bg-zinc-900 flex flex-col print:bg-white print:static print:block animate-in fade-in duration-200">
@@ -104,6 +115,21 @@ export const ReportPdfViewer: React.FC<ReportPdfViewerProps> = ({
             <span className="md:hidden">Relatório A4</span>
          </span>
          <div className="flex gap-3">
+            <select
+              value={template}
+              onChange={(event) => {
+                const nextTemplate = event.target.value as typeof template;
+                setTemplate(nextTemplate);
+                localStorage.setItem('report-pdf-template', nextTemplate);
+              }}
+              aria-label="Modelo visual do relatório"
+              className="bg-white/10 text-white border border-white/20 rounded-full px-3 py-2 text-xs font-bold outline-none"
+            >
+              <option value="classico" className="text-slate-900">Clássico</option>
+              <option value="moderno" className="text-slate-900">Moderno</option>
+              <option value="colorido" className="text-slate-900">Colorido</option>
+              <option value="minimalista" className="text-slate-900">Minimalista</option>
+            </select>
             <button 
               onClick={handleDownload}
               disabled={isDownloading}
@@ -145,7 +171,7 @@ export const ReportPdfViewer: React.FC<ReportPdfViewerProps> = ({
             className="shadow-2xl flex flex-col relative print:shadow-none print:m-0 print:w-full"
         >
             {/* Faixa Decorativa */}
-            <div className="h-3 bg-brand-700 w-full print:bg-brand-700" />
+            <div className="h-3 w-full" style={{ backgroundColor: currentTemplate.stripe }} />
 
             {/* Cabeçalho */}
             <header className="px-10 py-10 border-b-2 border-gray-100">
