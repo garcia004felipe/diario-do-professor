@@ -101,6 +101,7 @@ export interface Report {
   comorbidities: string;
   extraClassesSummary: string[]; // List of strings like "Futsal (Seg 14:00)"
   observations: string;
+  reinforcementActivities?: string;
 }
 
 export interface AiGeneratedContent {

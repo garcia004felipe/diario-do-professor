@@ -248,6 +248,36 @@ export const generateStudentPerformanceReport = async (
   return handleAiRequest(prompt);
 };
 
+export const generatePedagogicalReinforcement = async (
+  studentName: string,
+  attendance: number,
+  observations: string,
+  subjectsSummary: string
+): Promise<string> => {
+  const prompt = `
+    Atue como coordenador pedagógico. Sugira atividades práticas de reforço para o aluno ${studentName}.
+
+    DADOS:
+    - Frequência: ${attendance}%
+    - Desempenho nas matérias: ${subjectsSummary || 'Não informado'}
+    - Observações do professor: ${observations || 'Nenhuma observação registrada'}
+
+    Gere uma resposta curta, personalizada e utilizável na próxima semana.
+    Estrutura obrigatória:
+    ## Dificuldades prioritárias
+    Liste até 2 dificuldades demonstradas pelos dados.
+
+    ## Atividades de reforço
+    Sugira 3 atividades simples, com duração aproximada, materiais necessários e objetivo pedagógico.
+
+    ## Acompanhamento do professor
+    Descreva 2 indicadores objetivos para avaliar a evolução.
+
+    Não faça diagnósticos clínicos. Use linguagem acolhedora, prática e adequada à escola.
+  `;
+  return handleAiRequest(prompt);
+};
+
 export const correctText = async (text: string): Promise<string> => {
   const prompt = `
     Aja como um professor de gramática rigoroso, porém construtivo.

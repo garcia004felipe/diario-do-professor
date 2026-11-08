@@ -110,14 +110,16 @@ export const updateUserProfile = async (id: string, updates: Partial<UserProfile
 export const getClassGroups = async (userId: string): Promise<ClassGroup[]> => {
     if (!navigator.onLine) {
         const cached = await getFromCache('class_groups', (c: any) => c.user_id === userId);
-        return cached.map((item: any) => ({
+        return cached.map((item: any) => {
+            return {
             id: item.id,
             name: item.name,
             grade: item.grade,
             shift: item.shift,
             studentCount: item.student_count,
             teacherName: item.teacher_name
-        })).sort((a, b) => b.id.localeCompare(a.id)); // simple sort
+            };
+        }).sort((a, b) => b.id.localeCompare(a.id)); // simple sort
     }
 
     const { data, error } = await supabase
@@ -132,14 +134,16 @@ export const getClassGroups = async (userId: string): Promise<ClassGroup[]> => {
         await saveToCache('class_groups', data);
     }
 
-    return (data || []).map(item => ({
+    return (data || []).map(item => {
+        return {
         id: item.id,
         name: item.name,
         grade: item.grade,
         shift: item.shift,
         studentCount: item.student_count,
         teacherName: item.teacher_name
-    }));
+        };
+    });
 };
 
 export const createClassGroup = async (userId: string, classGroup: Omit<ClassGroup, 'id' | 'studentCount'>) => {
@@ -541,23 +545,44 @@ export const deleteExtraClass = async (id: string) => {
 
 // ==================== REPORTS ====================
 
+const REPORT_REINFORCEMENT_MARKER = '\n\n[ATIVIDADES_DE_REFORCO]\n';
+
+const splitReportObservations = (observations: string | null | undefined) => {
+    const value = observations || '';
+    const markerIndex = value.indexOf(REPORT_REINFORCEMENT_MARKER);
+    if (markerIndex === -1) return { observations: value, reinforcementActivities: undefined as string | undefined };
+    return {
+        observations: value.slice(0, markerIndex).trim(),
+        reinforcementActivities: value.slice(markerIndex + REPORT_REINFORCEMENT_MARKER.length).trim() || undefined
+    };
+};
+
+const joinReportObservations = (report: { observations: string; reinforcementActivities?: string }) =>
+    report.reinforcementActivities
+        ? `${report.observations.trim()}${REPORT_REINFORCEMENT_MARKER}${report.reinforcementActivities.trim()}`
+        : report.observations;
+
 export const getReports = async (userId: string): Promise<Report[]> => {
     console.log('🗄️ database.getReports - Buscando reports para userId:', userId);
 
     if (!navigator.onLine) {
         const cached = await getFromCache('reports', (r: any) => r.user_id === userId);
-        return cached.map((item: any) => ({
-            id: item.id,
-            studentId: item.student_id,
-            studentName: item.student_name,
-            date: item.date,
-            attendanceRate: item.attendance_rate,
-            absencesCount: item.absences_count,
-            dietaryRestrictions: item.dietary_restrictions,
-            comorbidities: item.comorbidities,
-            extraClassesSummary: item.extra_classes_summary || [],
-            observations: item.observations
-        })).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        return cached.map((item: any) => {
+            const parsed = splitReportObservations(item.observations);
+            return {
+                id: item.id,
+                studentId: item.student_id,
+                studentName: item.student_name,
+                date: item.date,
+                attendanceRate: item.attendance_rate,
+                absencesCount: item.absences_count,
+                dietaryRestrictions: item.dietary_restrictions,
+                comorbidities: item.comorbidities,
+                extraClassesSummary: item.extra_classes_summary || [],
+                observations: parsed.observations,
+                reinforcementActivities: parsed.reinforcementActivities
+            };
+        }).sort((a: Report, b: Report) => new Date(b.date).getTime() - new Date(a.date).getTime());
     }
 
     const { data, error } = await supabase
@@ -577,18 +602,22 @@ export const getReports = async (userId: string): Promise<Report[]> => {
 
     console.log('🗄️ ✅ Reports encontrados:', data?.length || 0, 'itens');
 
-    return (data || []).map(item => ({
-        id: item.id,
-        studentId: item.student_id,
-        studentName: item.student_name,
-        date: item.date,
-        attendanceRate: item.attendance_rate,
-        absencesCount: item.absences_count,
-        dietaryRestrictions: item.dietary_restrictions,
-        comorbidities: item.comorbidities,
-        extraClassesSummary: item.extra_classes_summary || [],
-        observations: item.observations
-    }));
+    return (data || []).map(item => {
+        const parsed = splitReportObservations(item.observations);
+        return {
+            id: item.id,
+            studentId: item.student_id,
+            studentName: item.student_name,
+            date: item.date,
+            attendanceRate: item.attendance_rate,
+            absencesCount: item.absences_count,
+            dietaryRestrictions: item.dietary_restrictions,
+            comorbidities: item.comorbidities,
+            extraClassesSummary: item.extra_classes_summary || [],
+            observations: parsed.observations,
+            reinforcementActivities: parsed.reinforcementActivities
+        };
+    });
 };
 
 export const createReport = async (userId: string, report: Omit<Report, 'id'>) => {
@@ -608,7 +637,7 @@ export const createReport = async (userId: string, report: Omit<Report, 'id'>) =
             dietary_restrictions: report.dietaryRestrictions,
             comorbidities: report.comorbidities,
             extra_classes_summary: report.extraClassesSummary,
-            observations: report.observations,
+            observations: joinReportObservations(report),
             user_id: userId
         };
         await offlineSyncService.addOperation('create', 'reports', newReport);
@@ -627,7 +656,7 @@ export const createReport = async (userId: string, report: Omit<Report, 'id'>) =
             dietary_restrictions: report.dietaryRestrictions,
             comorbidities: report.comorbidities,
             extra_classes_summary: report.extraClassesSummary,
-            observations: report.observations,
+            observations: joinReportObservations(report),
             user_id: userId
         })
         .select()
@@ -654,7 +683,7 @@ export const updateReport = async (report: Report) => {
             dietary_restrictions: report.dietaryRestrictions,
             comorbidities: report.comorbidities,
             extra_classes_summary: report.extraClassesSummary,
-            observations: report.observations
+            observations: joinReportObservations(report)
         });
         return report;
     }
@@ -670,7 +699,7 @@ export const updateReport = async (report: Report) => {
             dietary_restrictions: report.dietaryRestrictions,
             comorbidities: report.comorbidities,
             extra_classes_summary: report.extraClassesSummary,
-            observations: report.observations
+            observations: joinReportObservations(report)
         })
         .eq('id', report.id)
         .select()

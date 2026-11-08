@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Report, Student } from '../types';
-import { X, Printer, AlertTriangle, Building, Activity, User, BookOpen, FileCheck, Download, Loader2 } from 'lucide-react';
+import { X, Printer, AlertTriangle, Building, Activity, User, BookOpen, FileCheck, Download, Loader2, Sparkles } from 'lucide-react';
 
 interface ReportPdfViewerProps {
   report: Report;
@@ -304,6 +304,18 @@ export const ReportPdfViewer: React.FC<ReportPdfViewerProps> = ({
                         {report.observations}
                     </div>
                 </section>
+
+                {report.reinforcementActivities && (
+                    <section>
+                        <div className="flex items-center gap-2 mb-4 border-b border-gray-100 pb-2">
+                            <Sparkles size={16} className="text-brand-600" />
+                            <h2 className="text-xs font-bold text-gray-400 uppercase tracking-widest font-sans">Dicas de Atividades de Reforço</h2>
+                        </div>
+                        <div className="bg-brand-50 p-6 border border-brand-100 rounded-lg text-gray-800 leading-relaxed text-sm whitespace-pre-wrap print:bg-white print:border-gray-300">
+                            {report.reinforcementActivities}
+                        </div>
+                    </section>
+                )}
             </main>
 
             {/* Rodapé / Assinaturas */}

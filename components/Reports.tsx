@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { Report, Student, ExtraClass, UserProfile } from '../types';
-import { FileText, Plus, Search, Trash2, Eye, X, AlertTriangle, Activity, Calendar, Calculator, Edit, Download } from 'lucide-react';
+import { FileText, Plus, Search, Trash2, Eye, X, AlertTriangle, Activity, Calendar, Calculator, Edit, Download, Sparkles, Loader2 } from 'lucide-react';
 import { ConfirmDialog } from './ConfirmDialog';
 import { ReportPdfViewer } from './ReportPdfViewer';
 import { ExportService } from '../services/exportService';
 import { motion, type Variants } from 'framer-motion';
 import { DictationButton } from './DictationButton';
+import { generatePedagogicalReinforcement } from '../services/geminiService';
 
 interface ReportsProps {
   reports: Report[];
@@ -16,6 +17,18 @@ interface ReportsProps {
   onDelete: (id: string) => void;
   currentUser: UserProfile | null;
 }
+
+const REINFORCEMENT_START = '\n\n[ATIVIDADES_DE_REFORCO]\n';
+
+const splitReinforcement = (observations: string) => {
+  const markerIndex = observations.indexOf(REINFORCEMENT_START);
+  if (markerIndex === -1) return { observations, reinforcement: '' };
+  return {
+    observations: observations.slice(0, markerIndex).trim(),
+    reinforcement: observations.slice(markerIndex + REINFORCEMENT_START.length).trim()
+  };
+};
+
 
 export const Reports: React.FC<ReportsProps> = ({ reports, students, extraClasses, onAdd, onEdit, onDelete, currentUser }) => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -34,6 +47,8 @@ export const Reports: React.FC<ReportsProps> = ({ reports, students, extraClasse
   const [dietaryRestrictions, setDietaryRestrictions] = useState('');
   const [comorbidities, setComorbidities] = useState('');
   const [observations, setObservations] = useState('');
+  const [reinforcementActivities, setReinforcementActivities] = useState('');
+  const [isGeneratingReinforcement, setIsGeneratingReinforcement] = useState(false);
   const [studentExtraClasses, setStudentExtraClasses] = useState<string[]>([]);
 
   // Bloqueia a rolagem do fundo (#main-content) quando o modal está aberto
@@ -103,13 +118,15 @@ export const Reports: React.FC<ReportsProps> = ({ reports, students, extraClasse
   }, [absencesCount, totalClasses]);
 
   const handleEditClick = (report: Report) => {
+    const split = splitReinforcement(report.observations);
     setEditingId(report.id);
     setSelectedStudentId(report.studentId);
     setAbsencesCount(report.absencesCount);
     setAttendanceRate(report.attendanceRate);
     setDietaryRestrictions(report.dietaryRestrictions);
     setComorbidities(report.comorbidities);
-    setObservations(report.observations);
+    setObservations(split.observations);
+    setReinforcementActivities(split.reinforcement || report.reinforcementActivities || '');
 
     if (report.attendanceRate < 100) {
       const calculatedTotal = Math.round((100 * report.absencesCount) / (100 - report.attendanceRate));
@@ -126,6 +143,32 @@ export const Reports: React.FC<ReportsProps> = ({ reports, students, extraClasse
     setIsModalOpen(true);
   };
 
+  const handleGenerateReinforcement = async () => {
+    const student = students.find(s => s.id === selectedStudentId);
+    if (!student || isGeneratingReinforcement) return;
+
+    const subjectsSummary = student.subjects
+      ?.map(subject => `${subject.name}: ${subject.grade.toFixed(1)}`)
+      .join(', ') || '';
+
+    setIsGeneratingReinforcement(true);
+    try {
+      const result = await generatePedagogicalReinforcement(
+        student.name,
+        attendanceRate,
+        observations,
+        subjectsSummary
+      );
+      if (!result.startsWith('Erro na IA:') && !result.startsWith('A IA está')) {
+        setReinforcementActivities(result);
+      } else {
+        alert(result);
+      }
+    } finally {
+      setIsGeneratingReinforcement(false);
+    }
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const student = students.find(s => s.id === selectedStudentId);
@@ -140,7 +183,8 @@ export const Reports: React.FC<ReportsProps> = ({ reports, students, extraClasse
       dietaryRestrictions,
       comorbidities: comorbidities || 'Nenhuma',
       extraClassesSummary: studentExtraClasses,
-      observations
+      observations,
+      reinforcementActivities: reinforcementActivities || undefined
     };
 
     if (editingId) {
@@ -162,6 +206,8 @@ export const Reports: React.FC<ReportsProps> = ({ reports, students, extraClasse
     setDietaryRestrictions('');
     setComorbidities('');
     setObservations('');
+    setReinforcementActivities('');
+    setIsGeneratingReinforcement(false);
     setStudentExtraClasses([]);
   };
 
@@ -259,6 +305,18 @@ export const Reports: React.FC<ReportsProps> = ({ reports, students, extraClasse
                 <span className="truncate"><span className="font-medium">Comorbidades:</span> {report.comorbidities || 'Nenhuma'}</span>
               </div>
             </div>
+
+            {report.reinforcementActivities && (
+              <div className="mb-4 rounded-lg border border-brand-100 bg-brand-50 p-3">
+                <div className="flex items-center gap-2 text-brand-700 text-xs font-bold mb-1">
+                  <Sparkles size={14} />
+                  Atividades de reforço
+                </div>
+                <p className="text-xs text-brand-800 line-clamp-3 whitespace-pre-line">
+                  {report.reinforcementActivities}
+                </p>
+              </div>
+            )}
 
             <div className="flex gap-2">
               <button
@@ -422,6 +480,33 @@ export const Reports: React.FC<ReportsProps> = ({ reports, students, extraClasse
                           className="w-full h-32 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-500 resize-y"
                         />
                       </div>
+                    </div>
+
+                    <div className="rounded-xl border border-brand-100 bg-brand-50/60 p-4">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
+                        <div>
+                          <h4 className="text-sm font-bold text-brand-800">Atividades de reforço</h4>
+                          <p className="text-xs text-brand-600 mt-0.5">Sugestões pedagógicas personalizadas pela IA.</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleGenerateReinforcement}
+                          disabled={isGeneratingReinforcement}
+                          className="flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-brand-600 text-white text-xs font-bold hover:bg-brand-700 disabled:opacity-50"
+                        >
+                          {isGeneratingReinforcement ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+                          {isGeneratingReinforcement ? 'Gerando...' : reinforcementActivities ? 'Gerar novamente' : 'Gerar com IA'}
+                        </button>
+                      </div>
+                      {reinforcementActivities ? (
+                        <textarea
+                          value={reinforcementActivities}
+                          onChange={(e) => setReinforcementActivities(e.target.value)}
+                          className="w-full min-h-40 p-3 border border-brand-200 rounded-lg bg-white text-sm text-slate-700 focus:ring-2 focus:ring-brand-500 resize-y"
+                        />
+                      ) : (
+                        <p className="text-sm text-brand-700/70 italic">Nenhuma atividade de reforço gerada ainda.</p>
+                      )}
                     </div>
                   </>
                 )}

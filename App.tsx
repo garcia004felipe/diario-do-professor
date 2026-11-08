@@ -20,7 +20,7 @@ import { DatabaseTest } from './components/DatabaseTest';
 import { Communications } from './components/Communications';
 import { BackupRestore } from './components/BackupRestore';
 import { ViewState, Student, ExtraClass, ActivityType, ClassGroup, Report, NotificationItem, UserProfile, AiGeneratedContent, Communication } from './types';
-import { generateStudentPerformanceReport, hasApiKey } from './services/geminiService';
+import { generateStudentPerformanceReport, generatePedagogicalReinforcement, hasApiKey } from './services/geminiService';
 import * as db from './services/database';
 import { ExportService } from './services/exportService';
 import { generateIntelligentNotifications } from './services/notificationService';
@@ -382,11 +382,19 @@ export default function App() {
 
         if (scenario) {
           try {
-            const reportText = await generateStudentPerformanceReport(
-              student.name,
-              scenario,
-              { averageGrade: avgGrade, attendance: student.attendanceRate, subjectsSummary }
-            );
+            const [reportText, reinforcementText] = await Promise.all([
+              generateStudentPerformanceReport(
+                student.name,
+                scenario,
+                { averageGrade: avgGrade, attendance: student.attendanceRate, subjectsSummary }
+              ),
+              generatePedagogicalReinforcement(
+                student.name,
+                student.attendanceRate,
+                student.needs,
+                subjectsSummary
+              )
+            ]);
 
             if (reportText && reportText !== 'MISSING_KEY' && reportText !== 'INVALID_KEY') {
               const newReport: Report = {
@@ -399,7 +407,10 @@ export default function App() {
                 dietaryRestrictions: student.needs,
                 comorbidities: 'Gerado automaticamente pela IA',
                 extraClassesSummary: [],
-                observations: reportText
+                observations: reportText,
+                reinforcementActivities: reinforcementText.startsWith('Erro na IA:')
+                  ? undefined
+                  : reinforcementText
               };
 
               setReports(prev => [newReport, ...prev]);

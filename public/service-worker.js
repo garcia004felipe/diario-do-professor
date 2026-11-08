@@ -1,6 +1,6 @@
-const CACHE_NAME = 'diario-professor-v4';
-const STATIC_CACHE = 'static-v4';
-const DYNAMIC_CACHE = 'dynamic-v4';
+const CACHE_NAME = 'diario-professor-v5';
+const STATIC_CACHE = 'static-v5';
+const DYNAMIC_CACHE = 'dynamic-v5';
 
 // Arquivos essenciais para cache
 const STATIC_ASSETS = [

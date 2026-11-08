@@ -49,6 +49,15 @@ export class ExportService {
         const splitText = doc.splitTextToSize(report.observations, 170);
         doc.text(splitText, 20, 80);
 
+        if (report.reinforcementActivities) {
+            const reinforcementTitleY = 80 + (splitText.length * 5) + 12;
+            doc.setFontSize(14);
+            doc.text('Atividades de reforço sugeridas pela IA:', 20, reinforcementTitleY);
+            doc.setFontSize(10);
+            const reinforcementText = doc.splitTextToSize(report.reinforcementActivities, 170);
+            doc.text(reinforcementText, 20, reinforcementTitleY + 10);
+        }
+
         // Salvar
         doc.save(`relatorio-${report.studentName}-${report.date}.pdf`);
     }
@@ -458,7 +467,8 @@ export class ExportService {
             'Aluno': r.studentName,
             'Data': r.date,
             'Frequência': r.attendanceRate,
-            'Observações': r.observations
+            'Observações': r.observations,
+            'Atividades de reforço': r.reinforcementActivities || ''
         }));
         const reportsSheet = XLSX.utils.json_to_sheet(reportsData);
         XLSX.utils.book_append_sheet(workbook, reportsSheet, 'Relatórios');
