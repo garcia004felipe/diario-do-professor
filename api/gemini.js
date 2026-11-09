@@ -84,6 +84,34 @@ const generateWithFallback = async (ai, prompt, primaryModel, fallbackModel) => 
   throw lastError;
 };
 
+const discoverGeminiModels = async (ai) => {
+  const pager = await ai.models.list({ config: { pageSize: 100 } });
+  const names = [];
+
+  for await (const item of pager) {
+    const name = String(item?.name || '').replace(/^models\//, '');
+    const supportsGenerate =
+      !item?.supportedActions ||
+      item.supportedActions.some(action =>
+        String(action).toLowerCase().includes('generatecontent')
+      );
+
+    if (name.startsWith('gemini-') && supportsGenerate && !names.includes(name)) {
+      names.push(name);
+    }
+  }
+
+  return names.sort((a, b) => {
+    const priority = name => {
+      if (name.includes('2.5-flash')) return 0;
+      if (name.includes('2.0-flash')) return 1;
+      if (name.includes('flash')) return 2;
+      return 3;
+    };
+    return priority(a) - priority(b) || a.localeCompare(b);
+  });
+};
+
 export default async function handler(req, res) {
   const allowedOrigin = '*';
 
@@ -125,11 +153,14 @@ export default async function handler(req, res) {
           return;
         }
 
-        const primaryModel = 'gemini-2.5-flash';
-        const fallbackModel = 'gemini-2.5-flash';
-
         const ai = new GoogleGenAI({ apiKey });
-        const response = await generateWithFallback(ai, prompt, primaryModel, fallbackModel);
+        const availableModels = await discoverGeminiModels(ai);
+
+        if (!availableModels.length) {
+          throw new Error('Nenhum modelo Gemini disponível para gerar conteúdo nesta chave/projeto.');
+        }
+
+        const response = await generateWithFallback(ai, prompt, availableModels[0], availableModels[1]);
 
         res.status(200).json({ text: response.text || 'Sem resposta da IA.' });
       } catch (error) {

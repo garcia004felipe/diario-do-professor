@@ -42,9 +42,6 @@ export default defineConfig(({ mode }) => {
               try {
                 const { prompt, model } = JSON.parse(body || '{}');
                 const apiKey = env.GEMINI_API_KEY || process.env.GEMINI_API_KEY;
-                const primaryModel = 'gemini-2.5-flash';
-                const fallbackModel = 'gemini-2.5-flash';
-
                 if (!apiKey) {
                   res.statusCode = 500;
                   res.setHeader('Content-Type', 'application/json');
@@ -59,8 +56,34 @@ export default defineConfig(({ mode }) => {
                 const ai = new GoogleGenAI({ apiKey });
                 let aiRes;
                 let lastError;
+                const discovered: string[] = [];
+                const pager = await ai.models.list({ config: { pageSize: 100 } });
 
-                for (const selectedModel of [...new Set([primaryModel, fallbackModel])]) {
+                for await (const item of pager as any) {
+                  const name = String(item?.name || '').replace(/^models\//, '');
+                  if (
+                    name.startsWith('gemini-') &&
+                    (!item?.supportedActions ||
+                      item.supportedActions.some((action: string) =>
+                        String(action).toLowerCase().includes('generatecontent')
+                      )) &&
+                    !discovered.includes(name)
+                  ) {
+                    discovered.push(name);
+                  }
+                }
+
+                const primaryModel =
+                  discovered.find(name => name.includes('2.5-flash')) ||
+                  discovered.find(name => name.includes('2.0-flash')) ||
+                  discovered.find(name => name.includes('flash')) ||
+                  discovered[0];
+
+                if (!primaryModel) {
+                  throw new Error('Nenhum modelo Gemini disponível nesta chave/projeto.');
+                }
+
+                for (const selectedModel of [primaryModel]) {
                   try {
                     aiRes = await ai.models.generateContent({ model: selectedModel, contents: prompt });
                     break;

@@ -77,6 +77,32 @@ const generateWithFallback = async <T>(
   throw lastError;
 };
 
+const discoverGeminiModels = async (ai: GoogleGenAI): Promise<string[]> => {
+  const pager = await ai.models.list({ config: { pageSize: 100 } });
+  const names: string[] = [];
+
+  for await (const item of pager) {
+    const name = String(item?.name || "").replace(/^models\//, "");
+    const supportsGenerate =
+      !item?.supportedActions ||
+      item.supportedActions.some(action =>
+        String(action).toLowerCase().includes("generatecontent")
+      );
+
+    if (name.startsWith("gemini-") && supportsGenerate && !names.includes(name)) {
+      names.push(name);
+    }
+  }
+
+  return names.sort((a, b) => {
+    const priority = (name: string) =>
+      name.includes("2.5-flash") ? 0 :
+      name.includes("2.0-flash") ? 1 :
+      name.includes("flash") ? 2 : 3;
+    return priority(a) - priority(b) || a.localeCompare(b);
+  });
+};
+
 export default async (req: Request) => {
   const corsHeaders = {
     "Access-Control-Allow-Origin": "*",
@@ -121,11 +147,19 @@ export default async (req: Request) => {
       });
     }
 
-    const primaryModel = "gemini-2.5-flash";
-    const fallbackModel = "gemini-2.5-flash";
-
     const ai = new GoogleGenAI({ apiKey });
-    const response = await generateWithFallback<any>(ai, prompt, primaryModel, fallbackModel);
+    const availableModels = await discoverGeminiModels(ai);
+
+    if (!availableModels.length) {
+      throw new Error("Nenhum modelo Gemini disponível para gerar conteúdo nesta chave/projeto.");
+    }
+
+    const response = await generateWithFallback<any>(
+      ai,
+      prompt,
+      availableModels[0],
+      availableModels[1]
+    );
 
     return new Response(
       JSON.stringify({ text: response.text || "Sem resposta da IA." }),
