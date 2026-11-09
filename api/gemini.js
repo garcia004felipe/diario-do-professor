@@ -125,17 +125,8 @@ export default async function handler(req, res) {
           return;
         }
 
-        const configuredModel = model || process.env.GEMINI_MODEL || 'gemini-2.5-flash';
-        const primaryModel =
-          configuredModel.includes('3.8') || configuredModel.includes('1.5')
-            ? 'gemini-2.5-flash'
-            : configuredModel;
-        const configuredFallback =
-          process.env.GEMINI_FALLBACK_MODEL || 'gemini-2.5-flash';
-        const fallbackModel =
-          configuredFallback.includes('3.8') || configuredFallback.includes('1.5')
-            ? 'gemini-2.5-flash'
-            : configuredFallback;
+        const primaryModel = 'gemini-2.5-flash';
+        const fallbackModel = 'gemini-2.5-flash';
 
         const ai = new GoogleGenAI({ apiKey });
         const response = await generateWithFallback(ai, prompt, primaryModel, fallbackModel);
