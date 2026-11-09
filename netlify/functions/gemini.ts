@@ -152,6 +152,39 @@ export default async (req: Request) => {
       );
     }
 
+    if (
+      message.toLowerCase().includes('api key') ||
+      message.toLowerCase().includes('api_key') ||
+      message.toLowerCase().includes('unauthenticated') ||
+      message.toLowerCase().includes('401')
+    ) {
+      return new Response(
+        JSON.stringify({ error: 'A chave da Gemini foi rejeitada. Gere uma nova chave e atualize GEMINI_API_KEY no ambiente seguro.' }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    if (
+      message.toLowerCase().includes('permission denied') ||
+      message.toLowerCase().includes('403') ||
+      message.toLowerCase().includes('not enabled')
+    ) {
+      return new Response(
+        JSON.stringify({ error: 'A chave não tem acesso ao Gemini API. Ative a API Gemini e confirme o projeto vinculado à chave.' }),
+        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    if (
+      message.toLowerCase().includes('404') ||
+      message.toLowerCase().includes('not found')
+    ) {
+      return new Response(
+        JSON.stringify({ error: 'O modelo configurado não está disponível. Remova GEMINI_MODEL e use gemini-2.5-flash.' }),
+        { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     if (isTransientGeminiError(message)) {
       return new Response(
         JSON.stringify({ error: friendlyGeminiUnavailableMessage }),

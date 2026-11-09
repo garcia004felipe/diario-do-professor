@@ -144,9 +144,39 @@ export default async function handler(req, res) {
       } catch (error) {
         console.error('Erro na API Gemini do Vercel:', error);
         const message = error?.message || '';
+        const lowerMessage = message.toLowerCase();
 
         if (error?.code === 'QUOTA_EXHAUSTED') {
           res.status(429).json({ error: friendlyQuotaMessage });
+          return;
+        }
+
+        if (
+          lowerMessage.includes('api key') ||
+          lowerMessage.includes('api_key') ||
+          lowerMessage.includes('unauthenticated') ||
+          lowerMessage.includes('401')
+        ) {
+          res.status(401).json({ error: 'A chave da Gemini foi rejeitada. Gere uma nova chave e atualize GEMINI_API_KEY na Vercel.' });
+          return;
+        }
+
+        if (
+          lowerMessage.includes('permission denied') ||
+          lowerMessage.includes('403') ||
+          lowerMessage.includes('not enabled') ||
+          lowerMessage.includes('consumer')
+        ) {
+          res.status(403).json({ error: 'A chave não tem acesso ao Gemini API. Ative a API Gemini e confirme o projeto vinculado à chave.' });
+          return;
+        }
+
+        if (
+          lowerMessage.includes('404') ||
+          lowerMessage.includes('not found') ||
+          lowerMessage.includes('modelo') && lowerMessage.includes('não')
+        ) {
+          res.status(404).json({ error: 'O modelo configurado não está disponível nesta chave/projeto. Remova GEMINI_MODEL e tente novamente com gemini-2.5-flash.' });
           return;
         }
 
