@@ -68,16 +68,25 @@ const discoverGeminiModels = async ai => {
       item.supportedActions.some(action =>
         String(action).toLowerCase().includes('generatecontent')
       );
+    const isNonTextModel =
+      /(image|audio|speech|tts|embedding|video|veo|live|robotics|computer-use)/i.test(name);
 
-    if (name.startsWith('gemini-') && supportsGenerate && !names.includes(name)) {
+    if (name.startsWith('gemini-') && supportsGenerate && !isNonTextModel && !names.includes(name)) {
       names.push(name);
     }
   }
 
-  const priority = name =>
-    name.includes('2.5-flash') ? 0 :
-    name.includes('2.0-flash') ? 1 :
-    name.includes('flash') ? 2 : 3;
+  const priority = name => {
+    const isPreview = /preview|experimental/i.test(name);
+    if (name === 'gemini-2.5-flash') return 0;
+    if (name.includes('2.5-flash') && !isPreview) return 1;
+    if (name.includes('2.0-flash') && !isPreview) return 2;
+    if (name.includes('flash') && !isPreview) return 3;
+    if (name.includes('2.5-flash')) return 4;
+    if (name.includes('2.0-flash')) return 5;
+    if (name.includes('flash')) return 6;
+    return isPreview ? 8 : 7;
+  };
 
   cachedModels = names.sort((a, b) => priority(a) - priority(b) || a.localeCompare(b));
   modelsCachedAt = Date.now();

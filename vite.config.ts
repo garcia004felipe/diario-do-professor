@@ -59,8 +59,11 @@ export default defineConfig(({ mode }) => {
 
                 for await (const item of pager) {
                   const name = String(item?.name || '').replace(/^models\//, '');
+                  const isNonTextModel =
+                    /(image|audio|speech|tts|embedding|video|veo|live|robotics|computer-use)/i.test(name);
                   if (
                     name.startsWith('gemini-') &&
+                    !isNonTextModel &&
                     (!item?.supportedActions ||
                       item.supportedActions.some(action =>
                         String(action).toLowerCase().includes('generatecontent')
@@ -70,10 +73,19 @@ export default defineConfig(({ mode }) => {
                   }
                 }
 
-                const selectedModel = availableModels.find(name => name.includes('2.5-flash'))
-                  || availableModels.find(name => name.includes('2.0-flash'))
-                  || availableModels.find(name => name.includes('flash'))
-                  || availableModels[0];
+                const priority = (name: string) => {
+                  const isPreview = /preview|experimental/i.test(name);
+                  if (name === 'gemini-2.5-flash') return 0;
+                  if (name.includes('2.5-flash') && !isPreview) return 1;
+                  if (name.includes('2.0-flash') && !isPreview) return 2;
+                  if (name.includes('flash') && !isPreview) return 3;
+                  if (name.includes('2.5-flash')) return 4;
+                  if (name.includes('2.0-flash')) return 5;
+                  if (name.includes('flash')) return 6;
+                  return isPreview ? 8 : 7;
+                };
+                const selectedModel = availableModels
+                  .sort((a, b) => priority(a) - priority(b) || a.localeCompare(b))[0];
 
                 if (!selectedModel) {
                   throw new Error('Nenhum modelo Gemini compatível com geração de texto está disponível para este projeto.');
