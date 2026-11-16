@@ -16,7 +16,7 @@ export default defineConfig(({ mode }) => {
       {
         name: 'netlify-functions-dev-proxy',
         configureServer(server) {
-          const handleGeminiRequest = async (req: any, res: any) => {
+          server.middlewares.use('/api/gemini', async (req, res) => {
             if (req.method === 'OPTIONS') {
               res.statusCode = 204;
               res.setHeader('Access-Control-Allow-Origin', '*');
@@ -54,47 +54,32 @@ export default defineConfig(({ mode }) => {
                 }
 
                 const ai = new GoogleGenAI({ apiKey });
-                let aiRes;
-                let lastError;
-                const discovered: string[] = [];
+                const availableModels = [];
                 const pager = await ai.models.list({ config: { pageSize: 100 } });
 
-                for await (const item of pager as any) {
+                for await (const item of pager) {
                   const name = String(item?.name || '').replace(/^models\//, '');
                   if (
                     name.startsWith('gemini-') &&
                     (!item?.supportedActions ||
-                      item.supportedActions.some((action: string) =>
+                      item.supportedActions.some(action =>
                         String(action).toLowerCase().includes('generatecontent')
-                      )) &&
-                    !discovered.includes(name)
+                      ))
                   ) {
-                    discovered.push(name);
+                    availableModels.push(name);
                   }
                 }
 
-                const primaryModel =
-                  discovered.find(name => name.includes('2.5-flash')) ||
-                  discovered.find(name => name.includes('2.0-flash')) ||
-                  discovered.find(name => name.includes('flash')) ||
-                  discovered[0];
+                const selectedModel = availableModels.find(name => name.includes('2.5-flash'))
+                  || availableModels.find(name => name.includes('2.0-flash'))
+                  || availableModels.find(name => name.includes('flash'))
+                  || availableModels[0];
 
-                if (!primaryModel) {
-                  throw new Error('Nenhum modelo Gemini disponível nesta chave/projeto.');
+                if (!selectedModel) {
+                  throw new Error('Nenhum modelo Gemini compatível com geração de texto está disponível para este projeto.');
                 }
 
-                for (const selectedModel of [primaryModel]) {
-                  try {
-                    aiRes = await ai.models.generateContent({ model: selectedModel, contents: prompt });
-                    break;
-                  } catch (error) {
-                    lastError = error;
-                  }
-                }
-
-                if (!aiRes) {
-                  throw lastError;
-                }
+                const aiRes = await ai.models.generateContent({ model: selectedModel, contents: prompt });
                 res.statusCode = 200;
                 res.setHeader('Content-Type', 'application/json');
                 res.end(JSON.stringify({ text: aiRes.text || '' }));
@@ -104,10 +89,7 @@ export default defineConfig(({ mode }) => {
                 res.end(JSON.stringify({ error: err.message || 'Erro ao processar IA no servidor local' }));
               }
             });
-          };
-
-          server.middlewares.use('/api/gemini', handleGeminiRequest);
-          server.middlewares.use('/.netlify/functions/gemini', handleGeminiRequest);
+          });
         }
       }
     ],

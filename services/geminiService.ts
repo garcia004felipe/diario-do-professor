@@ -1,5 +1,3 @@
-import { GoogleGenAI } from "@google/genai";
-
 // O modelo deve ser configurado no ambiente do deploy para bater com a chave Gemini ativa.
 // Não fixar um nome de modelo no código do cliente.
 export const getApiKey = (): string => {
@@ -23,63 +21,52 @@ export const handleAiRequest = async (prompt: string, model?: string): Promise<s
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 75_000);
 
-  const payload = model ? { prompt, model } : { prompt };
-  const endpoints = ['/api/gemini', '/.netlify/functions/gemini'];
-
-  let lastError = '';
-
   try {
-    for (const endpoint of endpoints) {
-      try {
-        const response = await fetch(endpoint, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-          signal: controller.signal,
-        });
+    const payload = model ? { prompt, model } : { prompt };
 
-        const contentType = response.headers.get('content-type') || '';
+    const response = await fetch('/api/gemini', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
 
-        // Se a rota foi capturada pelo SPA e retornou HTML, tenta o endpoint direto
-        if (contentType.includes('text/html')) {
-          console.warn(`Endpoint ${endpoint} retornou HTML (redirecionamento do SPA). Tentando próximo endpoint...`);
-          lastError = `O endpoint ${endpoint} retornou HTML em vez de JSON da IA`;
-          continue;
-        }
-
-        if (response.ok) {
-          const data = await response.json();
-          return data.text || "Sem resposta da IA.";
-        }
-
-        const errData = await response.json().catch(() => null);
-        if (errData?.error) {
-          const errorMessage = String(errData.error);
-          const lower = errorMessage.toLowerCase();
-          const isGeminiBusy = lower.includes('temporariamente ocupada') ||
-            lower.includes('high demand') ||
-            lower.includes('unavailable') ||
-            lower.includes('tente novamente em alguns minutos');
-
-          console.error("Erro retornado pelo backend Gemini:", errData.error);
-
-          if (isGeminiBusy) {
-            return 'A IA está temporariamente ocupada. Tente novamente em alguns minutos.';
-          }
-
-          return `Erro na IA: ${errorMessage}`;
-        }
-
-        lastError = `Status ${response.status} ao consultar ${endpoint}`;
-      } catch (err: any) {
-        if (err instanceof DOMException && err.name === 'AbortError') {
-          return "Erro na IA: A resposta demorou mais de 1 minuto. Simplifique o pedido ou tente novamente.";
-        }
-        lastError = err?.message || 'Erro de rede';
-      }
+    if (response.ok) {
+      const data = await response.json();
+      return data.text || "Sem resposta da IA.";
     }
 
-    return `Erro na IA: Não foi possível conectar ao servidor da IA (${lastError}). Verifique se a variável GEMINI_API_KEY está configurada no Netlify (Site configuration -> Environment variables).`;
+    const errData = await response.json().catch(() => null);
+    if (errData?.error) {
+      const errorMessage = String(errData.error);
+      const isGeminiBusy = errorMessage.toLowerCase().includes('temporariamente ocupada') ||
+        errorMessage.toLowerCase().includes('high demand') ||
+        errorMessage.toLowerCase().includes('unavailable') ||
+        errorMessage.toLowerCase().includes('tente novamente em alguns minutos');
+      const diagnostic = errData.diagnostic
+        ? `\nDetalhe técnico: ${String(errData.diagnostic)}`
+        : '';
+
+      console.error("Erro retornado pelo backend Gemini:", {
+        error: errData.error,
+        diagnostic: errData.diagnostic,
+      });
+
+      if (isGeminiBusy) {
+        return 'A IA está temporariamente ocupada. Tente novamente em alguns minutos.';
+      }
+
+      return `Erro na IA: ${errorMessage}${diagnostic}`;
+    }
+
+    return "Erro na IA: O serviço de IA não respondeu corretamente. Configure a chave GEMINI_API_KEY no ambiente do servidor.";
+  } catch (networkError) {
+    if (networkError instanceof DOMException && networkError.name === 'AbortError') {
+      return "Erro na IA: A resposta demorou mais de 1 minuto. Tente novamente.";
+    }
+
+    console.warn("Função do servidor indisponível:", networkError);
+    return "Erro na IA: O backend de IA não está disponível no servidor. Configure GEMINI_API_KEY no ambiente do deploy.";
   } finally {
     clearTimeout(timeoutId);
   }
@@ -248,36 +235,6 @@ export const generateStudentPerformanceReport = async (
   return handleAiRequest(prompt);
 };
 
-export const generatePedagogicalReinforcement = async (
-  studentName: string,
-  attendance: number,
-  observations: string,
-  subjectsSummary: string
-): Promise<string> => {
-  const prompt = `
-    Atue como coordenador pedagógico. Sugira atividades práticas de reforço para o aluno ${studentName}.
-
-    DADOS:
-    - Frequência: ${attendance}%
-    - Desempenho nas matérias: ${subjectsSummary || 'Não informado'}
-    - Observações do professor: ${observations || 'Nenhuma observação registrada'}
-
-    Gere uma resposta curta, personalizada e utilizável na próxima semana.
-    Estrutura obrigatória:
-    ## Dificuldades prioritárias
-    Liste até 2 dificuldades demonstradas pelos dados.
-
-    ## Atividades de reforço
-    Sugira 3 atividades simples, com duração aproximada, materiais necessários e objetivo pedagógico.
-
-    ## Acompanhamento do professor
-    Descreva 2 indicadores objetivos para avaliar a evolução.
-
-    Não faça diagnósticos clínicos. Use linguagem acolhedora, prática e adequada à escola.
-  `;
-  return handleAiRequest(prompt);
-};
-
 export const correctText = async (text: string): Promise<string> => {
   const prompt = `
     Aja como um professor de gramática rigoroso, porém construtivo.
@@ -337,9 +294,6 @@ export const generateCommunication = async (
   return handleAiRequest(prompt);
 };
 
-/**
- * Gera dicas práticas de intervenção pedagógica para um aluno específico
- */
 export const generateInterventionTips = async (
   studentName: string,
   scenario: 'EXCELLENT' | 'CRITICAL' | 'IMPROVING' | 'DECLINING',
@@ -369,9 +323,36 @@ export const generateInterventionTips = async (
   return handleAiRequest(prompt);
 };
 
-/**
- * Gera um resumo matinal acolhedor para o professor
- */
+export const generatePedagogicalReinforcement = async (
+  studentName: string,
+  attendance: number,
+  observations: string,
+  subjectsSummary: string
+): Promise<string> => {
+  const prompt = `
+    Atue como coordenador pedagógico. Sugira atividades práticas de reforço para o aluno ${studentName}.
+
+    DADOS:
+    - Frequência: ${attendance}%
+    - Desempenho nas matérias: ${subjectsSummary || 'Não informado'}
+    - Observações do professor: ${observations || 'Nenhuma observação registrada'}
+
+    Gere uma resposta curta, personalizada e utilizável na próxima semana.
+    Estrutura obrigatória:
+    ## Dificuldades prioritárias
+    Liste até 2 dificuldades demonstradas pelos dados.
+
+    ## Atividades de reforço
+    Sugira 3 atividades simples, com duração aproximada, materiais necessários e objetivo pedagógico.
+
+    ## Acompanhamento do professor
+    Descreva 2 indicadores objetivos para avaliar a evolução.
+
+    Não faça diagnósticos clínicos. Use linguagem acolhedora, prática e adequada à escola.
+  `;
+  return handleAiRequest(prompt);
+};
+
 export const generateMorningSummary = async (
   totalStudents: number,
   totalClasses: number,

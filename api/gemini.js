@@ -7,14 +7,30 @@ const isTransientGeminiError = (message = '') => {
     text.includes('temporar') ||
     text.includes('unavailable') ||
     text.includes('503') ||
-    text.includes('429') ||
-    text.includes('rate limit') ||
     text.includes('overloaded')
   );
 };
 
 const friendlyGeminiUnavailableMessage = 'A IA está temporariamente ocupada. Tente novamente em alguns minutos.';
-const friendlyQuotaMessage = 'Sua chave da Gemini atingiu o limite de uso atual. Aguarde a renovação da cota ou configure uma chave com cota disponível.';
+const friendlyQuotaMessage = 'O Google Gemini recusou a solicitação por limite de uso (429). O limite é associado ao projeto/modelo, não à chave individual. Confira a cota do modelo e o projeto associado à chave no Google AI Studio.';
+const modelCacheTtlMs = 30 * 60 * 1000;
+let cachedModels = [];
+let modelsCachedAt = 0;
+
+const getErrorMessage = error => String(error?.message || error || '');
+
+const getErrorStatus = error => Number(error?.status || error?.statusCode || error?.response?.status || 0);
+
+const isQuotaError = error => {
+  const text = getErrorMessage(error).toLowerCase();
+  return (
+    getErrorStatus(error) === 429 ||
+    text.includes('429') ||
+    text.includes('quota') ||
+    text.includes('resource_exhausted') ||
+    text.includes('rate limit')
+  );
+};
 
 const withGeminiRetry = async (fn, retries = 2) => {
   let lastError;
@@ -24,19 +40,9 @@ const withGeminiRetry = async (fn, retries = 2) => {
       return await fn();
     } catch (error) {
       lastError = error;
-      const message = error?.message || '';
-      const lowerMessage = message.toLowerCase();
+      const message = getErrorMessage(error);
 
-      if (
-        lowerMessage.includes('429') ||
-        lowerMessage.includes('quota') ||
-        lowerMessage.includes('resource_exhausted') ||
-        lowerMessage.includes('rate limit')
-      ) {
-        throw error;
-      }
-
-      if (!isTransientGeminiError(message) || attempt === retries) {
+      if (isQuotaError(error) || !isTransientGeminiError(message) || attempt === retries) {
         throw error;
       }
 
@@ -47,44 +53,11 @@ const withGeminiRetry = async (fn, retries = 2) => {
   throw lastError;
 };
 
-const generateWithFallback = async (ai, prompt, primaryModel, fallbackModel) => {
-  let lastError;
-  const models = [...new Set([primaryModel, fallbackModel].filter(Boolean))];
-
-  for (const selectedModel of models) {
-    try {
-      return await withGeminiRetry(async () => {
-        return await ai.models.generateContent({
-          model: selectedModel,
-          contents: prompt,
-        });
-      }, 2);
-    } catch (error) {
-      lastError = error;
-      const message = String(error?.message || '');
-      const lowerMessage = message.toLowerCase();
-
-      if (
-        lowerMessage.includes('429') ||
-        lowerMessage.includes('quota') ||
-        lowerMessage.includes('resource_exhausted') ||
-        lowerMessage.includes('rate limit')
-      ) {
-        const quotaError = new Error(friendlyQuotaMessage);
-        quotaError.code = 'QUOTA_EXHAUSTED';
-        throw quotaError;
-      }
-
-      if (!message.includes('404') && !isTransientGeminiError(message)) {
-        throw error;
-      }
-    }
+const discoverGeminiModels = async ai => {
+  if (cachedModels.length && Date.now() - modelsCachedAt < modelCacheTtlMs) {
+    return cachedModels;
   }
 
-  throw lastError;
-};
-
-const discoverGeminiModels = async (ai) => {
   const pager = await ai.models.list({ config: { pageSize: 100 } });
   const names = [];
 
@@ -101,15 +74,14 @@ const discoverGeminiModels = async (ai) => {
     }
   }
 
-  return names.sort((a, b) => {
-    const priority = name => {
-      if (name.includes('2.5-flash')) return 0;
-      if (name.includes('2.0-flash')) return 1;
-      if (name.includes('flash')) return 2;
-      return 3;
-    };
-    return priority(a) - priority(b) || a.localeCompare(b);
-  });
+  const priority = name =>
+    name.includes('2.5-flash') ? 0 :
+    name.includes('2.0-flash') ? 1 :
+    name.includes('flash') ? 2 : 3;
+
+  cachedModels = names.sort((a, b) => priority(a) - priority(b) || a.localeCompare(b));
+  modelsCachedAt = Date.now();
+  return cachedModels;
 };
 
 export default async function handler(req, res) {
@@ -157,21 +129,53 @@ export default async function handler(req, res) {
         const availableModels = await discoverGeminiModels(ai);
 
         if (!availableModels.length) {
-          throw new Error('Nenhum modelo Gemini disponível para gerar conteúdo nesta chave/projeto.');
+          throw new Error('Nenhum modelo Gemini compatível com geração de texto está disponível para este projeto.');
         }
 
-        const response = await generateWithFallback(ai, prompt, availableModels[0], availableModels[1]);
+        let response;
+        let lastError;
+
+        const preferredModels = availableModels.slice(0, 3);
+        const requestedModel = model && availableModels.includes(model) ? model : null;
+
+        for (const selectedModel of [...new Set([requestedModel, ...preferredModels].filter(Boolean))]) {
+          try {
+            response = await withGeminiRetry(() =>
+              ai.models.generateContent({ model: selectedModel, contents: prompt })
+            );
+            break;
+          } catch (error) {
+            lastError = error;
+            const message = getErrorMessage(error);
+            if (isQuotaError(error) || (!message.includes('404') && !message.toLowerCase().includes('not found'))) {
+              throw error;
+            }
+          }
+        }
+
+        if (!response) {
+          throw lastError || new Error('Não foi possível selecionar um modelo Gemini.');
+        }
 
         res.status(200).json({ text: response.text || 'Sem resposta da IA.' });
       } catch (error) {
-        console.error('Erro na API Gemini do Vercel:', error);
-        const message = error?.message || '';
-        const lowerMessage = message.toLowerCase();
+        const message = getErrorMessage(error);
+        const safeMessage = message.replaceAll(apiKey, '[chave ocultada]');
+        console.error('Erro na API Gemini do Vercel:', {
+          code: error?.code,
+          status: getErrorStatus(error),
+          message: safeMessage,
+        });
 
-        if (error?.code === 'QUOTA_EXHAUSTED') {
-          res.status(429).json({ error: friendlyQuotaMessage });
+        if (isQuotaError(error)) {
+          res.status(429).json({
+            error: friendlyQuotaMessage,
+            diagnostic: (safeMessage || `HTTP ${getErrorStatus(error)} (${error?.code || 'quota'})`).slice(0, 500),
+          });
           return;
         }
+
+        const lowerMessage = message.toLowerCase();
 
         if (
           lowerMessage.includes('api key') ||
@@ -179,7 +183,7 @@ export default async function handler(req, res) {
           lowerMessage.includes('unauthenticated') ||
           lowerMessage.includes('401')
         ) {
-          res.status(401).json({ error: 'A chave da Gemini foi rejeitada. Gere uma nova chave e atualize GEMINI_API_KEY na Vercel.' });
+          res.status(401).json({ error: 'A chave da Gemini foi rejeitada. Confira se a nova GEMINI_API_KEY está configurada no ambiente Production da Vercel e faça um novo deploy.' });
           return;
         }
 
@@ -189,16 +193,12 @@ export default async function handler(req, res) {
           lowerMessage.includes('not enabled') ||
           lowerMessage.includes('consumer')
         ) {
-          res.status(403).json({ error: 'A chave não tem acesso ao Gemini API. Ative a API Gemini e confirme o projeto vinculado à chave.' });
+          res.status(403).json({ error: 'A chave não tem acesso ao Gemini API. Confira a API habilitada e o projeto associado à chave.' });
           return;
         }
 
-        if (
-          lowerMessage.includes('404') ||
-          lowerMessage.includes('not found') ||
-          lowerMessage.includes('modelo') && lowerMessage.includes('não')
-        ) {
-          res.status(404).json({ error: 'O modelo configurado não está disponível nesta chave/projeto. Remova GEMINI_MODEL e tente novamente com gemini-2.5-flash.' });
+        if (lowerMessage.includes('404') || lowerMessage.includes('not found')) {
+          res.status(404).json({ error: 'Nenhum dos modelos disponíveis para a chave aceitou a solicitação. Confira o acesso a modelos Gemini no Google AI Studio.' });
           return;
         }
 

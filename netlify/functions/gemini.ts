@@ -12,7 +12,20 @@ const isTransientGeminiError = (message = '') => {
 };
 
 const friendlyGeminiUnavailableMessage = 'A IA está temporariamente ocupada. Tente novamente em alguns minutos.';
-const friendlyQuotaMessage = 'A chave do Gemini atingiu o limite de requisições. Aguarde alguns instantes ou verifique sua cota no Google AI Studio.';
+const friendlyQuotaMessage = 'O Google Gemini recusou a solicitação por limite de uso (429). O limite é associado ao projeto/modelo, não à chave individual. Confira a cota do modelo e o projeto associado à chave no Google AI Studio.';
+const modelCacheTtlMs = 30 * 60 * 1000;
+let cachedModels: string[] = [];
+let modelsCachedAt = 0;
+
+const getErrorStatus = (error: any) =>
+  Number(error?.status || error?.statusCode || error?.response?.status || 0);
+
+const isQuotaError = (error: unknown) => {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  const text = message.toLowerCase();
+  return getErrorStatus(error) === 429 || text.includes('429') || text.includes('quota') ||
+    text.includes('resource_exhausted') || text.includes('rate limit');
+};
 
 const withGeminiRetry = async <T>(fn: () => Promise<T>, retries = 2): Promise<T> => {
   let lastError: unknown;
@@ -24,7 +37,7 @@ const withGeminiRetry = async <T>(fn: () => Promise<T>, retries = 2): Promise<T>
       lastError = error;
       const message = error instanceof Error ? error.message : String(error ?? '');
 
-      if (!isTransientGeminiError(message) || attempt === retries) {
+      if (isQuotaError(error) || !isTransientGeminiError(message) || attempt === retries) {
         throw error;
       }
 
@@ -35,49 +48,11 @@ const withGeminiRetry = async <T>(fn: () => Promise<T>, retries = 2): Promise<T>
   throw lastError;
 };
 
-const generateWithFallback = async <T>(
-  ai: GoogleGenAI,
-  prompt: string,
-  primaryModel: string,
-  fallbackModel: string
-): Promise<T> => {
-  let lastError: unknown;
-  const models = [...new Set([primaryModel, fallbackModel, "gemini-2.5-flash"].filter(Boolean))];
-
-  for (const selectedModel of models) {
-    try {
-      return await withGeminiRetry(async (): Promise<T> => {
-        return await ai.models.generateContent({
-          model: selectedModel,
-          contents: prompt,
-        }) as T;
-      }, 2);
-    } catch (error) {
-      lastError = error;
-      const message = error instanceof Error ? error.message : String(error ?? '');
-      const lower = message.toLowerCase();
-
-      if (
-        lower.includes('429') ||
-        lower.includes('quota') ||
-        lower.includes('resource_exhausted') ||
-        lower.includes('rate limit')
-      ) {
-        const quotaError = new Error(friendlyQuotaMessage);
-        (quotaError as any).code = 'QUOTA_EXHAUSTED';
-        throw quotaError;
-      }
-
-      if (!message.includes('404') && !isTransientGeminiError(message)) {
-        throw error;
-      }
-    }
+const discoverGeminiModels = async (ai: GoogleGenAI): Promise<string[]> => {
+  if (cachedModels.length && Date.now() - modelsCachedAt < modelCacheTtlMs) {
+    return cachedModels;
   }
 
-  throw lastError;
-};
-
-const discoverGeminiModels = async (ai: GoogleGenAI): Promise<string[]> => {
   const pager = await ai.models.list({ config: { pageSize: 100 } });
   const names: string[] = [];
 
@@ -94,13 +69,14 @@ const discoverGeminiModels = async (ai: GoogleGenAI): Promise<string[]> => {
     }
   }
 
-  return names.sort((a, b) => {
-    const priority = (name: string) =>
-      name.includes("2.5-flash") ? 0 :
-      name.includes("2.0-flash") ? 1 :
-      name.includes("flash") ? 2 : 3;
-    return priority(a) - priority(b) || a.localeCompare(b);
-  });
+  const priority = (name: string) =>
+    name.includes("2.5-flash") ? 0 :
+    name.includes("2.0-flash") ? 1 :
+    name.includes("flash") ? 2 : 3;
+
+  cachedModels = names.sort((a, b) => priority(a) - priority(b) || a.localeCompare(b));
+  modelsCachedAt = Date.now();
+  return cachedModels;
 };
 
 export default async (req: Request) => {
@@ -123,12 +99,12 @@ export default async (req: Request) => {
   }
 
   // A chave de API fica armazenada de forma 100% segura no servidor (Netlify Environment Variables)
-  const apiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
+  const apiKey = process.env.GEMINI_API_KEY;
 
   if (!apiKey) {
     return new Response(
       JSON.stringify({
-        error: "A variável GEMINI_API_KEY não foi configurada no painel do Netlify (Site configuration -> Environment variables)."
+        error: "A chave GEMINI_API_KEY não foi configurada nas variáveis de ambiente do Netlify."
       }),
       {
         status: 500,
@@ -143,7 +119,7 @@ export default async (req: Request) => {
     if (!prompt) {
       return new Response(JSON.stringify({ error: "Prompt é obrigatório." }), {
         status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json" },
       });
     }
 
@@ -151,15 +127,33 @@ export default async (req: Request) => {
     const availableModels = await discoverGeminiModels(ai);
 
     if (!availableModels.length) {
-      throw new Error("Nenhum modelo Gemini disponível para gerar conteúdo nesta chave/projeto.");
+      throw new Error("Nenhum modelo Gemini compatível com geração de texto está disponível para este projeto.");
     }
 
-    const response = await generateWithFallback<any>(
-      ai,
-      prompt,
-      availableModels[0],
-      availableModels[1]
-    );
+    let response;
+    let lastError: unknown;
+
+    const preferredModels = availableModels.slice(0, 3);
+    const requestedModel = model && availableModels.includes(model) ? model : null;
+
+    for (const selectedModel of [...new Set([requestedModel, ...preferredModels].filter(Boolean))]) {
+      try {
+        response = await withGeminiRetry(() =>
+          ai.models.generateContent({ model: selectedModel, contents: prompt })
+        );
+        break;
+      } catch (error) {
+        lastError = error;
+        const message = error instanceof Error ? error.message : String(error ?? "");
+        if (isQuotaError(error) || (!message.includes("404") && !message.toLowerCase().includes("not found"))) {
+          throw error;
+        }
+      }
+    }
+
+    if (!response) {
+      throw lastError || new Error("Não foi possível selecionar um modelo Gemini.");
+    }
 
     return new Response(
       JSON.stringify({ text: response.text || "Sem resposta da IA." }),
@@ -169,49 +163,21 @@ export default async (req: Request) => {
       }
     );
   } catch (error: any) {
-    console.error("Erro na Netlify Function Gemini:", error);
     const message = error?.message || "";
+    const safeMessage = String(message).replaceAll(apiKey, "[chave ocultada]");
+    console.error("Erro na Netlify Function Gemini:", {
+      code: error?.code,
+      status: getErrorStatus(error),
+      message: safeMessage,
+    });
 
-    if (error?.code === 'QUOTA_EXHAUSTED') {
+    if (isQuotaError(error)) {
       return new Response(
-        JSON.stringify({ error: friendlyQuotaMessage }),
-        {
-          status: 429,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
-      );
-    }
-
-    if (
-      message.toLowerCase().includes('api key') ||
-      message.toLowerCase().includes('api_key') ||
-      message.toLowerCase().includes('unauthenticated') ||
-      message.toLowerCase().includes('401')
-    ) {
-      return new Response(
-        JSON.stringify({ error: 'A chave da Gemini foi rejeitada. Gere uma nova chave e atualize GEMINI_API_KEY no ambiente seguro.' }),
-        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    if (
-      message.toLowerCase().includes('permission denied') ||
-      message.toLowerCase().includes('403') ||
-      message.toLowerCase().includes('not enabled')
-    ) {
-      return new Response(
-        JSON.stringify({ error: 'A chave não tem acesso ao Gemini API. Ative a API Gemini e confirme o projeto vinculado à chave.' }),
-        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    if (
-      message.toLowerCase().includes('404') ||
-      message.toLowerCase().includes('not found')
-    ) {
-      return new Response(
-        JSON.stringify({ error: 'O modelo configurado não está disponível. Remova GEMINI_MODEL e use gemini-2.5-flash.' }),
-        { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        JSON.stringify({
+          error: friendlyQuotaMessage,
+          diagnostic: (safeMessage || `HTTP ${getErrorStatus(error)} (${error?.code || 'quota'})`).slice(0, 500),
+        }),
+        { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
@@ -226,7 +192,7 @@ export default async (req: Request) => {
     }
 
     return new Response(
-      JSON.stringify({ error: message || "No momento não foi possível gerar a resposta. Tente novamente em alguns minutos." }),
+      JSON.stringify({ error: "No momento não foi possível gerar a resposta. Tente novamente em alguns minutos." }),
       {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -236,5 +202,5 @@ export default async (req: Request) => {
 };
 
 export const config = {
-  path: ["/api/gemini", "/.netlify/functions/gemini"]
+  path: ["/api/gemini", "/.netlify/functions/gemini"],
 };
