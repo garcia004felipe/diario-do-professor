@@ -756,6 +756,28 @@ export const createAiContent = async (userId: string, content: Omit<AiGeneratedC
     return data;
 };
 
+export const updateAiContent = async (
+    userId: string,
+    id: string,
+    content: Pick<AiGeneratedContent, 'title' | 'type' | 'content' | 'tags'>
+) => {
+    const { data, error } = await supabase
+        .from('ai_contents')
+        .update({
+            title: content.title,
+            type: content.type,
+            content: content.content,
+            tags: content.tags
+        })
+        .eq('id', id)
+        .eq('user_id', userId)
+        .select()
+        .single();
+
+    if (error) throw error;
+    return data;
+};
+
 export const deleteAiContent = async (id: string) => {
     const { error } = await supabase
         .from('ai_contents')

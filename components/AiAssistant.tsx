@@ -24,22 +24,30 @@ import { DictationButton } from './DictationButton';
 interface AiAssistantProps {
   students?: Student[];
   savedContents?: AiGeneratedContent[];
-  onSaveContent?: (content: Omit<AiGeneratedContent, 'id' | 'createdAt'>) => void;
+  onSaveContent?: (content: Omit<AiGeneratedContent, 'id' | 'createdAt'>) => Promise<AiGeneratedContent>;
+  onUpdateContent?: (
+    id: string,
+    content: Pick<AiGeneratedContent, 'title' | 'type' | 'content' | 'tags'>
+  ) => Promise<AiGeneratedContent>;
   onDeleteContent?: (id: string) => void;
 }
 
 type AiToolMode = 'LESSON_PLAN' | 'WEEKLY_PLAN' | 'OBJECTIVES' | 'ACTIVITIES' | 'STUDENT_ANALYSIS' | 'TEXT_CORRECTION' | 'LIBRARY';
+type SaveStatus = 'idle' | 'saving' | 'saved' | 'error' | 'dirty';
 
 export const AiAssistant: React.FC<AiAssistantProps> = ({ 
   students = [],
   savedContents = [],
   onSaveContent,
+  onUpdateContent,
   onDeleteContent
 }) => {
   const [activeMode, setActiveMode] = useState<AiToolMode>('WEEKLY_PLAN');
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState('');
   const [generatedTitle, setGeneratedTitle] = useState(''); // Store title for saving
+  const [currentSavedContentId, setCurrentSavedContentId] = useState<string | null>(null);
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
   
   // API Key Management State
   const [needsApiKey, setNeedsApiKey] = useState(false);
@@ -66,6 +74,19 @@ export const AiAssistant: React.FC<AiAssistantProps> = ({
     setIsKeyConfigured(true);
   }, []);
 
+  useEffect(() => {
+    if (result || viewingSavedContent || isLoading) return;
+
+    const latestDraft = savedContents.find(item => item.tags?.includes('AUTO_SAVED'));
+    if (!latestDraft) return;
+
+    setResult(latestDraft.content);
+    setGeneratedTitle(latestDraft.title);
+    setCurrentSavedContentId(latestDraft.id);
+    setActiveMode(latestDraft.type);
+    setSaveStatus('saved');
+  }, [savedContents, result, viewingSavedContent, isLoading]);
+
   const handleSaveKey = () => {
     setNeedsApiKey(false);
     setApiKeyInput('');
@@ -79,20 +100,40 @@ export const AiAssistant: React.FC<AiAssistantProps> = ({
     setResult('');
   };
 
-  const handleSaveResult = () => {
-    if (!result || !onSaveContent) return;
-    
-    // Determine type based on active mode (excluding LIBRARY)
-    const type = activeMode === 'LIBRARY' ? 'LESSON_PLAN' : activeMode;
-    
-    const title = generatedTitle || `Conteúdo Gerado - ${new Date().toLocaleDateString()}`;
+  const handleSaveResult = async () => {
+    if (!result || saveStatus === 'saving') return;
 
-    onSaveContent({
-        title,
-        type: type as any,
-        content: result
-    });
-    alert('Conteúdo salvo na biblioteca!');
+    if (!onSaveContent) {
+      setSaveStatus('error');
+      return;
+    }
+
+    setSaveStatus('saving');
+    const title = generatedTitle || `Conteúdo Gerado - ${new Date().toLocaleDateString()}`;
+    const type = activeMode === 'LIBRARY' ? 'LESSON_PLAN' : activeMode;
+    const content = {
+      title,
+      type,
+      content: result,
+      tags: ['AUTO_SAVED']
+    };
+
+    try {
+      let savedItem: AiGeneratedContent;
+      if (currentSavedContentId) {
+        if (!onUpdateContent) {
+          throw new Error('A atualização do conteúdo sincronizado não está disponível.');
+        }
+        savedItem = await onUpdateContent(currentSavedContentId, content);
+      } else {
+        savedItem = await onSaveContent(content);
+      }
+      setCurrentSavedContentId(savedItem.id);
+      setSaveStatus('saved');
+    } catch (error) {
+      console.error('Erro ao sincronizar conteúdo gerado pela IA:', error);
+      setSaveStatus('error');
+    }
   };
 
   const handleGenerate = async (e: React.FormEvent) => {
@@ -102,6 +143,8 @@ export const AiAssistant: React.FC<AiAssistantProps> = ({
     setKeyError('');
     setViewingSavedContent(null);
     setIsEditing(false);
+    setCurrentSavedContentId(null);
+    setSaveStatus('idle');
 
     let tempTitle = '';
 
@@ -159,6 +202,34 @@ export const AiAssistant: React.FC<AiAssistantProps> = ({
         setResult('A IA está configurada no servidor da aplicação. Solicite ao administrador que configure a variável GEMINI_API_KEY no ambiente do deploy.');
       } else {
         setResult(response);
+
+        const isSuccessfulResult =
+          response.trim().length > 0 &&
+          !response.startsWith('Erro') &&
+          response !== 'Sem resposta da IA.' &&
+          response !== 'Por favor, selecione um aluno válido.';
+
+        if (isSuccessfulResult) {
+          setSaveStatus('saving');
+          try {
+            if (!onSaveContent) {
+              throw new Error('O salvamento automático não está disponível.');
+            }
+
+            const type = activeMode === 'LIBRARY' ? 'LESSON_PLAN' : activeMode;
+            const savedItem = await onSaveContent({
+              title: tempTitle || `Conteúdo Gerado - ${new Date().toLocaleDateString()}`,
+              type,
+              content: response,
+              tags: ['AUTO_SAVED']
+            });
+            setCurrentSavedContentId(savedItem.id);
+            setSaveStatus('saved');
+          } catch (saveError) {
+            console.error('Erro ao salvar automaticamente conteúdo da IA:', saveError);
+            setSaveStatus('error');
+          }
+        }
       }
 
     } catch (error) {
@@ -560,6 +631,7 @@ export const AiAssistant: React.FC<AiAssistantProps> = ({
                                   // Save edits back to result
                                   setResult(editableContent);
                                   setIsEditing(false);
+                                  setSaveStatus(currentSavedContentId ? 'dirty' : 'error');
                                 } else {
                                   // Start editing
                                   const html = await marked.parse(displayedContent);
@@ -573,13 +645,33 @@ export const AiAssistant: React.FC<AiAssistantProps> = ({
                             {isEditing ? 'Concluir Edição' : 'Editar'}
                         </button>
                     )}
-                    {displayedContent && !viewingSavedContent && (
-                        <button 
-                            onClick={handleSaveResult}
-                            className="text-xs bg-brand-600 text-white hover:bg-brand-700 px-3 py-1.5 rounded-lg font-medium transition-colors flex items-center gap-1 shadow-sm"
-                        >
-                            <Save size={14} /> Salvar
-                        </button>
+                    {displayedContent && !viewingSavedContent && saveStatus !== 'idle' && (
+                        saveStatus === 'saved' ? (
+                          <span className="text-xs text-emerald-700 px-2 py-1.5" role="status" aria-live="polite">
+                            Sincronizado
+                          </span>
+                        ) : (
+                          <div className="flex items-center gap-2">
+                            {saveStatus === 'error' && (
+                              <span className="text-xs text-red-600" role="status" aria-live="polite">
+                                Não sincronizado
+                              </span>
+                            )}
+                            {saveStatus === 'dirty' && (
+                              <span className="text-xs text-amber-700" role="status" aria-live="polite">
+                                Alterações pendentes
+                              </span>
+                            )}
+                            <button
+                                onClick={handleSaveResult}
+                                disabled={saveStatus === 'saving'}
+                                className="text-xs bg-brand-600 text-white hover:bg-brand-700 disabled:opacity-60 disabled:cursor-wait px-3 py-1.5 rounded-lg font-medium transition-colors flex items-center gap-1 shadow-sm"
+                            >
+                                {saveStatus === 'saving' ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                                {saveStatus === 'saving' ? 'Salvando...' : saveStatus === 'dirty' ? 'Salvar alterações' : 'Tentar novamente'}
+                            </button>
+                          </div>
+                        )
                     )}
                     {displayedContent && (
                     <button 

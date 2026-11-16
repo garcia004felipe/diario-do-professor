@@ -995,20 +995,38 @@ export default function App() {
   };
 
   const handleSaveAiContent = async (content: Omit<AiGeneratedContent, 'id' | 'createdAt'>) => {
+    const activeUserId = await getActiveUserId();
+    if (!activeUserId) {
+      throw new Error('Faça login para sincronizar o conteúdo da IA.');
+    }
+
+    const created = await db.createAiContent(activeUserId, content);
     const newItem: AiGeneratedContent = {
       ...content,
-      id: Date.now().toString(),
-      createdAt: new Date().toISOString()
+      id: created.id,
+      createdAt: created.created_at
     };
     setAiContents(prev => [newItem, ...prev]);
+    return newItem;
+  };
+
+  const handleUpdateAiContent = async (
+    id: string,
+    content: Pick<AiGeneratedContent, 'title' | 'type' | 'content' | 'tags'>
+  ) => {
     const activeUserId = await getActiveUserId();
-    if (activeUserId) {
-      try {
-        await db.createAiContent(activeUserId, content);
-      } catch (error) {
-        console.error('Erro ao salvar conteúdo IA:', error);
-      }
+    if (!activeUserId) {
+      throw new Error('Faça login para sincronizar as alterações do conteúdo.');
     }
+
+    const updated = await db.updateAiContent(activeUserId, id, content);
+    const updatedItem: AiGeneratedContent = {
+      ...content,
+      id: updated.id,
+      createdAt: updated.created_at
+    };
+    setAiContents(prev => prev.map(item => item.id === id ? updatedItem : item));
+    return updatedItem;
   };
 
   // --- COMMUNICATIONS HANDLERS ---
@@ -1177,6 +1195,7 @@ export default function App() {
             students={students}
             savedContents={aiContents}
             onSaveContent={handleSaveAiContent}
+            onUpdateContent={handleUpdateAiContent}
             onDeleteContent={handleDeleteAiContent}
           />
         );
