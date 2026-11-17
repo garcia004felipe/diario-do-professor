@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   LayoutDashboard, Users, Calendar, FileText, Settings, LogOut,
   Menu, X, GraduationCap, Sparkles, School, Bell, BookOpen, Clock, Building, Edit2, RotateCcw,
@@ -63,6 +63,21 @@ const loadUserSession = (): UserProfile | null => {
   }
 };
 
+const playNotificationTone = (context: AudioContext) => {
+  const oscillator = context.createOscillator();
+  const volume = context.createGain();
+  const startTime = context.currentTime;
+  oscillator.type = 'sine';
+  oscillator.frequency.setValueAtTime(880, startTime);
+  volume.gain.setValueAtTime(0.0001, startTime);
+  volume.gain.exponentialRampToValueAtTime(0.08, startTime + 0.02);
+  volume.gain.exponentialRampToValueAtTime(0.0001, startTime + 0.22);
+  oscillator.connect(volume);
+  volume.connect(context.destination);
+  oscillator.start(startTime);
+  oscillator.stop(startTime + 0.23);
+};
+
 export default function App() {
   // Verificar se está no modo de teste
   const isTestMode = new URLSearchParams(window.location.search).get('test') === 'db';
@@ -86,6 +101,14 @@ export default function App() {
 
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(() => {
+    try {
+      return localStorage.getItem('dp_notification_sound_enabled') === 'true';
+    } catch (error) {
+      console.warn('Não foi possível carregar a preferência de som das notificações:', error);
+      return false;
+    }
+  });
 
   // Novos estados para funcionalidades avançadas
   const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -108,6 +131,70 @@ export default function App() {
   // Ref para controlar a execução única do monitoramento IA
   const hasRunAiCheck = useRef(false);
   const initialLoadComplete = useRef(false);
+  const knownNotificationIds = useRef<Set<string> | null>(null);
+  const notificationAudioContext = useRef<AudioContext | null>(null);
+
+  const unlockNotificationAudio = useCallback(() => {
+    if (typeof window === 'undefined' || !window.AudioContext) return;
+
+    try {
+      const context = notificationAudioContext.current ?? new window.AudioContext();
+      notificationAudioContext.current = context;
+      if (context.state === 'suspended') {
+        void context.resume().catch(error => {
+          console.warn('Não foi possível ativar o áudio das notificações:', error);
+        });
+      }
+    } catch (error) {
+      console.error('Não foi possível inicializar o áudio das notificações:', error);
+    }
+  }, []);
+
+  const playNotificationSound = useCallback(() => {
+    if (typeof window === 'undefined' || !window.AudioContext) return;
+
+    try {
+      const context = notificationAudioContext.current ?? new window.AudioContext();
+      notificationAudioContext.current = context;
+      if (context.state === 'suspended') {
+        void context.resume().then(() => playNotificationTone(context)).catch(error => {
+          console.warn('Não foi possível reproduzir o som da notificação:', error);
+        });
+        return;
+      }
+
+      playNotificationTone(context);
+    } catch (error) {
+      console.error('Falha ao reproduzir o som da notificação:', error);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!notificationSoundEnabled) return;
+
+    const unlockAudio = () => unlockNotificationAudio();
+    window.addEventListener('pointerdown', unlockAudio, { once: true });
+    window.addEventListener('keydown', unlockAudio, { once: true });
+
+    return () => {
+      window.removeEventListener('pointerdown', unlockAudio);
+      window.removeEventListener('keydown', unlockAudio);
+    };
+  }, [notificationSoundEnabled, unlockNotificationAudio]);
+
+  useEffect(() => {
+    const knownIds = knownNotificationIds.current;
+    if (!knownIds) return;
+
+    const hasNewUnreadNotification = notifications.some(
+      notification => !notification.read && !knownIds.has(notification.id)
+    );
+    notifications.forEach(notification => knownIds.add(notification.id));
+
+    if (hasNewUnreadNotification && notificationSoundEnabled) {
+      playNotificationSound();
+    }
+  }, [notifications, notificationSoundEnabled, playNotificationSound]);
 
   // Atalho de teclado Ctrl+K para busca global
   useEffect(() => {
@@ -255,6 +342,18 @@ export default function App() {
 
       console.log('📊 Dados carregados com sucesso');
       console.log('📄 Reports carregados:', reportsData?.length || 0, 'itens');
+      if (knownNotificationIds.current === null) {
+        const initialNotifications = notificationsData || [];
+        const initialGeneratedNotifications = generateIntelligentNotifications(
+          studentsData || [],
+          classesData || [],
+          extraClassesData || [],
+          getTodayString()
+        );
+        knownNotificationIds.current = new Set(
+          [...initialNotifications, ...initialGeneratedNotifications].map(notification => notification.id)
+        );
+      }
       setClasses(classesData || []);
       setStudents(studentsData || []);
       setExtraClasses(extraClassesData || []);
@@ -306,10 +405,12 @@ export default function App() {
         setIsAuthenticated(false);
         setCurrentUser(null);
         setUserId(null);
+        knownNotificationIds.current = null;
         localStorage.removeItem('dp_user');
         setStudents([]);
         setClasses([]);
         setReports([]);
+        setNotifications([]);
         setCommunications([]);
         initialLoadComplete.current = false;
         setIsLoading(false);
@@ -485,6 +586,17 @@ export default function App() {
         console.error('Erro ao marcar todas como lidas:', error);
       }
     }
+  };
+
+  const handleNotificationSoundChange = (enabled: boolean) => {
+    setNotificationSoundEnabled(enabled);
+    try {
+      localStorage.setItem('dp_notification_sound_enabled', String(enabled));
+    } catch (error) {
+      console.error('Não foi possível salvar a preferência de som das notificações:', error);
+    }
+
+    if (enabled) unlockNotificationAudio();
   };
 
   // Helper para obter com segurança o ID do usuário autenticado no Supabase
@@ -1496,7 +1608,9 @@ export default function App() {
               {isNotificationsOpen && (
                 <NotificationPanel
                   notifications={notifications}
+                  soundEnabled={notificationSoundEnabled}
                   onClose={() => setIsNotificationsOpen(false)}
+                  onSoundEnabledChange={handleNotificationSoundChange}
                   onMarkAsRead={handleMarkAsRead}
                   onMarkAllAsRead={handleMarkAllAsRead}
                   onNavigate={(view) => { setCurrentView(view); setIsNotificationsOpen(false); }}

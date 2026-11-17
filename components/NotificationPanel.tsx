@@ -1,10 +1,12 @@
 import React from 'react';
 import { NotificationItem, ViewState } from '../types';
-import { X, Bell, AlertTriangle, Clock, Info, Check, ChevronRight } from 'lucide-react';
+import { X, Bell, AlertTriangle, Clock, Info, ChevronRight, Volume2, VolumeX } from 'lucide-react';
 
 interface NotificationPanelProps {
   notifications: NotificationItem[];
+  soundEnabled: boolean;
   onClose: () => void;
+  onSoundEnabledChange: (enabled: boolean) => void;
   onMarkAsRead: (id: string) => void;
   onMarkAllAsRead: () => void;
   onNavigate: (view: ViewState) => void;
@@ -12,7 +14,9 @@ interface NotificationPanelProps {
 
 export const NotificationPanel: React.FC<NotificationPanelProps> = ({ 
   notifications, 
+  soundEnabled,
   onClose, 
+  onSoundEnabledChange,
   onMarkAsRead, 
   onMarkAllAsRead,
   onNavigate
@@ -57,6 +61,16 @@ export const NotificationPanel: React.FC<NotificationPanelProps> = ({
           )}
         </div>
         <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => onSoundEnabledChange(!soundEnabled)}
+            aria-label={soundEnabled ? 'Desativar som das notificações' : 'Ativar som das notificações'}
+            aria-pressed={soundEnabled}
+            title={soundEnabled ? 'Desativar som' : 'Ativar som'}
+            className="text-gray-500 hover:text-brand-700 p-1 rounded hover:bg-brand-50 transition-colors"
+          >
+            {soundEnabled ? <Volume2 size={18} /> : <VolumeX size={18} />}
+          </button>
            <button 
             onClick={onMarkAllAsRead}
             className="text-xs text-brand-600 hover:text-brand-800 font-medium px-2 py-1 rounded hover:bg-brand-50 transition-colors"
