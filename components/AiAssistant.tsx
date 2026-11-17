@@ -35,6 +35,83 @@ interface AiAssistantProps {
 type AiToolMode = 'LESSON_PLAN' | 'WEEKLY_PLAN' | 'OBJECTIVES' | 'ACTIVITIES' | 'STUDENT_ANALYSIS' | 'TEXT_CORRECTION' | 'LIBRARY';
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error' | 'dirty';
 
+const htmlToMarkdown = (html: string): string => {
+  const document = new DOMParser().parseFromString(html, 'text/html');
+
+  const convertNode = (node: Node): string => {
+    if (node instanceof Text) return (node.textContent || '').replace(/\u00a0/g, ' ');
+    if (!(node instanceof HTMLElement)) return '';
+
+    const children = () => Array.from(node.childNodes).map(convertNode).join('');
+    const text = children();
+
+    switch (node.tagName) {
+      case 'H1': return `# ${text.trim()}\n\n`;
+      case 'H2': return `## ${text.trim()}\n\n`;
+      case 'H3': return `### ${text.trim()}\n\n`;
+      case 'H4': return `#### ${text.trim()}\n\n`;
+      case 'P': return text.trim() ? `${text.trim()}\n\n` : '\n';
+      case 'BR': return '\n';
+      case 'STRONG':
+      case 'B': return `**${text.trim()}**`;
+      case 'EM':
+      case 'I': return `*${text.trim()}*`;
+      case 'S':
+      case 'DEL': return `~~${text.trim()}~~`;
+      case 'BLOCKQUOTE': return `${text.trim().split('\n').map(line => `> ${line}`).join('\n')}\n\n`;
+      case 'UL':
+      case 'OL': {
+        const items = Array.from(node.children).filter(child => child.tagName === 'LI');
+        return items.map((item, index) => {
+          const nestedLists = Array.from(item.children).filter(child => ['UL', 'OL'].includes(child.tagName));
+          const itemText = Array.from(item.childNodes)
+            .filter(child => !nestedLists.some(nestedList => nestedList === child))
+            .map(convertNode)
+            .join('')
+            .trim();
+          const isBullet = node.tagName === 'UL' || item.getAttribute('data-list') === 'bullet';
+          const marker = isBullet ? '- ' : `${index + 1}. `;
+          const indent = Number(item.className.match(/\bql-indent-(\d+)\b/)?.[1] || 0);
+          const nested = nestedLists.map(convertNode).join('');
+          return `${'  '.repeat(indent)}${marker}${itemText}\n${nested}`;
+        }).join('') + '\n';
+      }
+      case 'LI': return text;
+      case 'A': {
+        const href = node.getAttribute('href') || '';
+        return /^(https?:|mailto:|tel:|\/|#)/i.test(href) ? `[${text}](${href})` : text;
+      }
+      case 'CODE': return `\`${text}\``;
+      case 'PRE': {
+        const code = node.querySelector('code');
+        const language = code?.className.match(/language-([\w-]+)/)?.[1] || '';
+        return `\`\`\`${language}\n${(code?.textContent || text).trim()}\n\`\`\`\n\n`;
+      }
+      case 'TABLE': {
+        const rows = Array.from(node.querySelectorAll('tr')).map(row =>
+          Array.from(row.children).map(cell => convertNode(cell).trim().replace(/\|/g, '\\|'))
+        );
+        if (rows.length === 0) return '';
+        const header = `| ${rows[0].join(' | ')} |`;
+        const divider = `| ${rows[0].map(() => '---').join(' | ')} |`;
+        const body = rows.slice(1).map(row => `| ${row.join(' | ')} |`).join('\n');
+        return `${header}\n${divider}${body ? `\n${body}` : ''}\n\n`;
+      }
+      case 'TH':
+      case 'TD': return text;
+      case 'HR': return '---\n\n';
+      default: return text;
+    }
+  };
+
+  return Array.from(document.body.childNodes)
+    .map(convertNode)
+    .join('')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+};
+
 export const AiAssistant: React.FC<AiAssistantProps> = ({ 
   students = [],
   savedContents = [],
@@ -69,6 +146,8 @@ export const AiAssistant: React.FC<AiAssistantProps> = ({
   // Edit Mode
   const [isEditing, setIsEditing] = useState(false);
   const [editableContent, setEditableContent] = useState('');
+  const [originalEditableContent, setOriginalEditableContent] = useState('');
+  const [originalResultContent, setOriginalResultContent] = useState('');
 
   useEffect(() => {
     setIsKeyConfigured(true);
@@ -628,14 +707,19 @@ export const AiAssistant: React.FC<AiAssistantProps> = ({
                         <button 
                             onClick={async () => {
                                 if (isEditing) {
-                                  // Save edits back to result
-                                  setResult(editableContent);
+                                  const updatedContent = editableContent === originalEditableContent
+                                    ? originalResultContent
+                                    : htmlToMarkdown(editableContent);
+                                  setResult(updatedContent);
                                   setIsEditing(false);
-                                  setSaveStatus(currentSavedContentId ? 'dirty' : 'error');
+                                  if (updatedContent !== originalResultContent) {
+                                    setSaveStatus(currentSavedContentId ? 'dirty' : 'error');
+                                  }
                                 } else {
-                                  // Start editing
                                   const html = await marked.parse(displayedContent);
                                   setEditableContent(html);
+                                  setOriginalEditableContent(html);
+                                  setOriginalResultContent(displayedContent);
                                   setIsEditing(true);
                                 }
                             }}
